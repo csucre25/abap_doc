@@ -1,0 +1,3 @@
+# Herramientas de desarrollo y test (no se necesitan para ejecutar el bot).
+-r requirements.lock
+pytest==9.1.1

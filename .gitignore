@@ -1,0 +1,7 @@
+venv/
+.env
+.env.*
+ajustes_tecnicos.json
+__pycache__/
+*.pyc
+.pytest_cache/

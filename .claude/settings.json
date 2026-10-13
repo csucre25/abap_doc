@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)", 
+      "Read(./ajustes_tecnicos.json)"
+    ]
+  }
+}
