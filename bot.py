@@ -7,6 +7,7 @@ import asyncio
 import random
 from contextlib import asynccontextmanager
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest, NetworkError
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     filters, ContextTypes, ConversationHandler
@@ -328,6 +329,16 @@ async def handle_unexpected_input(update: Update, context: ContextTypes.DEFAULT_
     mensaje = "⚠️ <b>Entrada no reconocida.</b>\n\nEstoy esperando que subas un archivo (.docx, .pdf, o .zip) o presiones un botón.\n\nSi deseas iniciar un nuevo análisis, escribe /start"
     await update.message.reply_text(mensaje, parse_mode='HTML')
 
+async def manejar_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Los cortes de red con Telegram (502, timeouts) se reintentan solos:
+    basta una línea de aviso. Cualquier otro error se registra con su traza."""
+    error = context.error
+    # BadRequest hereda de NetworkError pero es un fallo de la petición, no de la red.
+    if isinstance(error, NetworkError) and not isinstance(error, BadRequest):
+        logger.warning(f"Telegram no respondió ({error}); se reintenta automáticamente.")
+        return
+    logger.error("Error no controlado en el bot", exc_info=error)
+
 def main():
     try:
         config = cargar_config()
@@ -366,6 +377,7 @@ def main():
     )
 
     app.add_handler(conv_handler)
+    app.add_error_handler(manejar_error)
     # MANEJADOR GLOBAL POR SI HABLAN FUERA DE UNA CONVERSACIÓN
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unexpected_input))
 

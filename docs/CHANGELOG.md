@@ -2,6 +2,13 @@
 
 ## 2026-10-13
 
+### Errores de red de Telegram sin traza en consola
+- Manejador global de errores en `bot.py`: los cortes de red con Telegram
+  (502 Bad Gateway, timeouts), que la librería reintenta sola, se registran en
+  una línea de aviso en vez de una traza completa por intento. El resto de
+  errores no controlados conserva su traza.
+- Test `tests/test_bot_errores.py`.
+
 ### Configuración central validada al arrancar
 - Nuevo `config.py`: único módulo que lee variables de entorno. Valida todo
   al iniciar y, si algo falta o es inválido, lista todos los problemas juntos
