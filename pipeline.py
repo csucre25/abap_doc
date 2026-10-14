@@ -624,7 +624,11 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
 
     except Exception as e:
         logger.error(f"Error Pipeline: {e}")
-        resultado.mensaje = TEXTS[LANG].get("zip_error", "Error interno") + f"\nDetalle: {e}"
+        # Sin esto, una falla temprana (p. ej. la IA rechaza la llamada) dejaba
+        # el registro de auditoría vacío y sin pista de lo ocurrido.
+        auditoria.agregar("ERROR - PIPELINE INTERRUMPIDO", "(sin prompt: la ejecución no terminó)",
+                          f"{type(e).__name__}: {e}")
+        resultado.mensaje =TEXTS[LANG].get("zip_error", "Error interno") + f"\nDetalle: {e}"
         resultado.mensaje_html = False
 
     return resultado

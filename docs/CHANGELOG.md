@@ -2,6 +2,13 @@
 
 ## 2026-10-13
 
+### El registro de auditoría anota la causa cuando el pipeline se interrumpe
+- Si la ejecución fallaba antes de terminar la primera fase (p. ej. el
+  proveedor de IA rechaza la llamada por falta de saldo), el log adjunto decía
+  solo "Sin logs registrados". Ahora incluye una entrada
+  "ERROR - PIPELINE INTERRUMPIDO" con el tipo y el detalle del error.
+- Test ampliado en `tests/test_pipeline.py`.
+
 ### Proveedor de IA seleccionable por configuración
 - Nuevo `ia.py`: el núcleo solo conoce `ClienteIA.completar()`; ya no depende
   de la forma de las respuestas del SDK de OpenAI ni de parámetros de NVIDIA.

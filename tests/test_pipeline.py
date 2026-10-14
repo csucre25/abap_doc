@@ -230,6 +230,8 @@ def test_ejecutar_pipeline_no_levanta_si_falla_la_ia(tmp_path):
     assert "servicio caído" in resultado.mensaje
     assert resultado.docx_path is None and resultado.borrador_json is None
     assert "FASE 2 - ABAP" in auditoria.texto()  # lo ya registrado no se pierde
+    assert "ERROR - PIPELINE INTERRUMPIDO" in auditoria.texto()
+    assert "RuntimeError: servicio caído" in auditoria.texto()
 
 
 def test_revisar_codigo_devuelve_hallazgos_y_los_audita():
