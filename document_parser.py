@@ -1,10 +1,12 @@
 import json
+import logging
 import pymupdf as fitz
 from docx import Document
 from openai import AsyncOpenAI
 from messages import TEXTS
 
 LANG = "es"
+logger = logging.getLogger(__name__)
 
 # El modelo por defecto (nemotron-3-super-120b-a12b) es un modelo de razonamiento
 # con "thinking" activado por defecto. Con enable_thinking=True el modelo ya no
@@ -104,9 +106,15 @@ async def analyze_calibration_text(raw_text: str, nvidia_client: AsyncOpenAI, mo
         extra_body=NO_THINKING,
     )
     
-    cleaned_response = clean_json_response(response.choices[0].message.content)
+    contenido = response.choices[0].message.content or ""
+    cleaned_response = clean_json_response(contenido)
     try:
         return json.loads(cleaned_response)
     except json.JSONDecodeError as e:
-        print(f"Error parseando Calibración JSON: {e}\nTexto limpio: {cleaned_response[:100]}...")
+        # finish_reason y longitud distinguen "respondió vacío" de "se cortó por max_tokens".
+        logger.warning(
+            f"Error parseando Calibración JSON ({e}). modelo={modelo} "
+            f"finish_reason={response.choices[0].finish_reason} caracteres_recibidos={len(contenido)} "
+            f"inicio={cleaned_response[:100]!r}"
+        )
         return {}

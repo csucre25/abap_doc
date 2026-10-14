@@ -57,7 +57,15 @@ TEXTS = {
         "msg_draw_doc": "📄 Documento Técnico (Word) generado con la plantilla DTSS.",
         "msg_json_backup": "🗂️ JSON de respaldo (estructura completa para auditoría o reproceso manual).",
         "msg_csv_config": "📊 CSV de customizing (datos completos sin compactar, para validar o recargar la configuración).",
-        "msg_critical_error": "Error crítico al enviar archivos adjuntos: {log_e}",
+        "aviso_calib_sin_texto": (
+            "No se pudo usar el documento de calibración: no contiene texto extraíble "
+            "(¿es un PDF escaneado?). Se aplicó el estilo por defecto."
+        ),
+        "aviso_calib_fallida": (
+            "No se pudo usar el documento de calibración: la IA no devolvió un resultado válido. "
+            "Se aplicó el estilo por defecto."
+        ),
+        "msg_critical_error":"Error crítico al enviar archivos adjuntos: {log_e}",
         "msg_full_dtss_ok": "🎉 <b>DTSS completo generado.</b>\n\nAdjunto el Word con los requisitos funcionales del AFU y el desarrollo técnico.",
         "msg_full_dtss_caption": (
             "📄 DTSS completo: requisitos funcionales (AFU) + desarrollo técnico.\n"

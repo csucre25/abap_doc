@@ -49,9 +49,10 @@ ABAP = {
 class ClienteIAFalso:
     """Imita AsyncOpenAI: responde según la fase (la identifica por el system prompt)."""
 
-    def __init__(self, respuesta_cr='{"has_violations": false, "findings": []}'):
+    def __init__(self, respuesta_cr='{"has_violations": false, "findings": []}', respuesta_f0='{"tone": "Sobrio"}'):
         self.llamadas = []
         self.respuesta_cr = respuesta_cr
+        self.respuesta_f0 = respuesta_f0
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
     async def _create(self, model, messages, **kwargs):
@@ -59,6 +60,8 @@ class ClienteIAFalso:
         self.llamadas.append(model)
         if system == TEXTS["es"]["sys_prompt_fase1_5"]:
             contenido = self.respuesta_cr
+        elif system == TEXTS["es"]["sys_prompt_fase0"]:
+            contenido = self.respuesta_f0
         elif system == TEXTS["es"]["sys_prompt_fase2"]:
             # La IA "limpia" el nombre y cambia el tipo: el núcleo debe imponer los de metadata.
             contenido = json.dumps([{
@@ -72,7 +75,9 @@ class ClienteIAFalso:
                 ],
                 "constantes": [{"nombre": "GC_MODE", "valor": "'X'", "descripcion": "Modo"}],
             })
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=contenido))])
+        return SimpleNamespace(choices=[
+            SimpleNamespace(message=SimpleNamespace(content=contenido), finish_reason="stop")
+        ])
 
 
 @pytest.fixture
@@ -170,6 +175,47 @@ def test_cada_fase_usa_su_modelo_y_la_plantilla_indicada(tmp_path):
     assert sorted(cliente.llamadas) == ["modelo-f0", "modelo-f1", "modelo-f2", "modelo-f2", "modelo-f4"]
     assert resultado.docx_path and os.path.exists(resultado.docx_path)
     assert f"plantilla={RAIZ / 'plantilla_dtss.docx'}" in auditoria.texto()
+
+
+def _correr_con_calibracion(tmp_path, calib_raw_text, respuesta_f0='{"tone": "Sobrio"}'):
+    cliente = ClienteIAFalso(respuesta_f0=respuesta_f0)
+    auditoria = RegistroAuditoria()
+    resultado = asyncio.run(ejecutar_pipeline(
+        EntradaPipeline(metadata_json=METADATA, abap_dict={}, calib_raw_text=calib_raw_text),
+        cliente, MODELOS, auditoria, dir_salida=str(tmp_path),
+        plantilla_path=str(RAIZ / "plantilla_dtss.docx"),
+    ))
+    assert resultado.docx_path  # el documento se genera en los tres casos
+    return resultado, auditoria.texto(), cliente
+
+
+def test_calibracion_usada_no_genera_avisos(tmp_path):
+    resultado, log, cliente = _correr_con_calibracion(tmp_path, "documento histórico")
+    assert resultado.avisos == []
+    assert "Tono requerido: Sobrio" in log
+    assert "FASE 0 OMITIDA" not in log and "FASE 0 FALLIDA" not in log
+
+
+def test_calibracion_saltada_por_el_usuario_no_avisa(tmp_path):
+    resultado, log, cliente = _correr_con_calibracion(tmp_path, None)
+    assert resultado.avisos == []
+    assert "FASE 0 OMITIDA" in log
+    assert "modelo-f0" not in cliente.llamadas
+
+
+def test_calibracion_con_respuesta_ilegible_de_la_ia_se_avisa(tmp_path):
+    # Caso real: el modelo de la fase 0 respondió vacío y el log decía "OMITIDA".
+    resultado, log, cliente = _correr_con_calibracion(tmp_path, "documento histórico", respuesta_f0="")
+    assert resultado.avisos == [TEXTS["es"]["aviso_calib_fallida"]]
+    assert "FASE 0 FALLIDA: El modelo modelo-f0" in log and "FASE 0 OMITIDA" not in log
+    assert "modelo-f0" in cliente.llamadas
+
+
+def test_calibracion_sin_texto_extraible_se_avisa(tmp_path):
+    resultado, log, cliente = _correr_con_calibracion(tmp_path, "  \n")
+    assert resultado.avisos == [TEXTS["es"]["aviso_calib_sin_texto"]]
+    assert "FASE 0 SIN TEXTO" in log
+    assert "modelo-f0" not in cliente.llamadas
 
 
 def test_ejecutar_pipeline_no_levanta_si_falla_la_ia(tmp_path):

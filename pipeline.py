@@ -70,6 +70,9 @@ class ResultadoPipeline:
     csvs_configuracion: list = field(default_factory=list)
     borrador_json: str | None = None
     afu_json: dict = field(default_factory=dict)
+    # Cosas que el usuario debe saber aunque el documento se haya generado
+    # (texto plano, sin formato): el canal las muestra junto al mensaje final.
+    avisos: list = field(default_factory=list)
 
 
 class RegistroAuditoria:
@@ -308,7 +311,7 @@ async def revisar_codigo(cliente_ia, modelo, metadata_str, abap_code_str, audito
 # FUNCIONES ASÍNCRONAS DEL PIPELINE IA
 # ==========================================
 async def task_phase_0(raw_text, cliente_ia, modelo):
-    if not raw_text: return {}
+    if not (raw_text or "").strip(): return {}
     return await analyze_calibration_text(raw_text, cliente_ia, modelo)
 
 async def task_phase_1(raw_text, cliente_ia, modelo):
@@ -382,8 +385,23 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
             calib_json = resultados[0]
             log_prompt_fase0 = TEXTS[LANG]["sys_prompt_fase0"]
         else:
+            # Tres motivos distintos para caer al perfil por defecto; solo el
+            # primero es decisión del usuario, los otros dos hay que avisarlos.
             calib_json = TEXTS[LANG]["default_calibration"]
-            log_prompt_fase0 = "FASE 0 OMITIDA: Se aplicó el perfil corporativo por defecto del sistema."
+            if entrada.calib_raw_text is None:
+                log_prompt_fase0 = "FASE 0 OMITIDA: Se aplicó el perfil corporativo por defecto del sistema."
+            elif not entrada.calib_raw_text.strip():
+                log_prompt_fase0 = (
+                    "FASE 0 SIN TEXTO: El documento de calibración no contiene texto extraíble "
+                    "(p. ej. un PDF escaneado). Se aplicó el perfil corporativo por defecto del sistema."
+                )
+                resultado.avisos.append(TEXTS[LANG]["aviso_calib_sin_texto"])
+            else:
+                log_prompt_fase0 = (
+                    f"FASE 0 FALLIDA: El modelo {modelos.fase0} no devolvió un JSON válido para el documento "
+                    "de calibración. Se aplicó el perfil corporativo por defecto del sistema."
+                )
+                resultado.avisos.append(TEXTS[LANG]["aviso_calib_fallida"])
 
         afu_json = resultados[1] or {}
 

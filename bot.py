@@ -43,6 +43,11 @@ WAITING_CALIBRATION, WAITING_AFU, WAITING_ZIP, WAITING_CR_CHOICE, WAITING_CR_DEC
 def obtener_auditoria(context: ContextTypes.DEFAULT_TYPE) -> RegistroAuditoria:
     return context.user_data.setdefault('audit_log', RegistroAuditoria())
 
+def componer_mensaje_final(resultado) -> str:
+    """Mensaje del pipeline más sus avisos (texto plano; se escapan si el mensaje va en HTML)."""
+    avisos = [html.escape(a) if resultado.mensaje_html else a for a in resultado.avisos]
+    return "\n\n".join([resultado.mensaje] + [f"⚠️ {a}" for a in avisos])
+
 def obtener_config(context: ContextTypes.DEFAULT_TYPE) -> Config:
     return context.bot_data['config']
 
@@ -259,7 +264,9 @@ async def execute_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
             entrada, obtener_cliente_ia(context), config.modelos, auditoria,
             progreso=progreso_en(status_msg), plantilla_path=config.plantilla_path,
         )
-        await status_msg.edit_text(resultado.mensaje, parse_mode='HTML' if resultado.mensaje_html else None)
+        await status_msg.edit_text(
+            componer_mensaje_final(resultado), parse_mode='HTML' if resultado.mensaje_html else None
+        )
 
     except Exception as e:
         logger.error(f"Error Pipeline: {e}")

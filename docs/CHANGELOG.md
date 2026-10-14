@@ -2,6 +2,17 @@
 
 ## 2026-10-13
 
+### La calibración fallida ya no se confunde con la omitida
+- Antes, si la IA no devolvía un JSON válido para el documento de calibración
+  (o el documento no tenía texto), el log decía "FASE 0 OMITIDA" y el usuario
+  no se enteraba de que se había aplicado el estilo por defecto.
+- Ahora el log distingue "OMITIDA" (decisión del usuario), "SIN TEXTO" y
+  "FALLIDA" (con el modelo usado), y en los dos últimos casos el mensaje final
+  del bot incluye un aviso.
+- La consola registra `finish_reason` y los caracteres recibidos cuando la
+  respuesta de calibración es ilegible.
+- Tests en `tests/test_pipeline.py` y `tests/test_bot_mensajes.py`.
+
 ### Errores de red de Telegram sin traza en consola
 - Manejador global de errores en `bot.py`: los cortes de red con Telegram
   (502 Bad Gateway, timeouts), que la librería reintenta sola, se registran en
