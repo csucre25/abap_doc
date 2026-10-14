@@ -51,6 +51,48 @@ def test_url_insegura_o_invalida_se_rechaza(url):
     assert len(error.value.problemas) == 1 and "LLM_BASE_URL" in error.value.problemas[0]
 
 
+def test_proveedor_por_defecto_es_nvidia_con_sus_parametros():
+    config = cargar_config(env())
+    assert config.llm_provider == "nvidia"
+    assert config.llm_extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert config.llm_api_version is None
+
+
+def test_parametros_extra_configurables_y_desactivables():
+    assert cargar_config(env(LLM_EXTRA_BODY="{}")).llm_extra_body == {}
+    assert cargar_config(env(LLM_EXTRA_BODY='{"top_k": 5}')).llm_extra_body == {"top_k": 5}
+    for invalido in ("no es json", "[1, 2]"):
+        with pytest.raises(ConfigError) as error:
+            cargar_config(env(LLM_EXTRA_BODY=invalido))
+        assert "LLM_EXTRA_BODY" in str(error.value)
+
+
+def test_proveedor_desconocido_se_rechaza():
+    with pytest.raises(ConfigError) as error:
+        cargar_config(env(LLM_PROVIDER="otro"))
+    assert "LLM_PROVIDER" in str(error.value)
+
+
+def test_otros_proveedores_exigen_url_y_modelo_propios():
+    with pytest.raises(ConfigError) as error:
+        cargar_config(env(LLM_PROVIDER="openai_compatible"))
+    assert len(error.value.problemas) == 2
+    assert "LLM_BASE_URL" in str(error.value) and "LLM_MODEL_DEFAULT" in str(error.value)
+
+    config = cargar_config(env(
+        LLM_PROVIDER="OpenAI_Compatible", LLM_BASE_URL="https://ia.interna.example/v1", LLM_MODEL_DEFAULT="m"))
+    assert config.llm_provider == "openai_compatible" and config.llm_extra_body == {}
+    assert config.modelos.fase2 == "m"
+
+
+def test_azure_exige_version_de_api():
+    base = dict(LLM_PROVIDER="azure_openai", LLM_BASE_URL="https://r.openai.azure.com", LLM_MODEL_DEFAULT="despliegue")
+    with pytest.raises(ConfigError) as error:
+        cargar_config(env(**base))
+    assert error.value.problemas == ["Falta LLM_API_VERSION (obligatoria con LLM_PROVIDER=azure_openai)."]
+    assert cargar_config(env(**base, LLM_API_VERSION="2024-10-21")).llm_api_version == "2024-10-21"
+
+
 def test_reporta_todos_los_problemas_juntos():
     with pytest.raises(ConfigError) as error:
         cargar_config({"PLANTILLA_DTSS_PATH": "no_existe.docx"})

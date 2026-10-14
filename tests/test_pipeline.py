@@ -7,10 +7,10 @@ import sys
 import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
+from ia import RespuestaIA
 from messages import TEXTS
 from pipeline import (
     EntradaPipeline, Modelos, RegistroAuditoria, ZipSinMetadataError,
@@ -47,17 +47,15 @@ ABAP = {
 
 
 class ClienteIAFalso:
-    """Imita AsyncOpenAI: responde según la fase (la identifica por el system prompt)."""
+    """Imita ia.ClienteIA: responde según la fase (la identifica por el system prompt)."""
 
     def __init__(self, respuesta_cr='{"has_violations": false, "findings": []}', respuesta_f0='{"tone": "Sobrio"}'):
         self.llamadas = []
         self.respuesta_cr = respuesta_cr
         self.respuesta_f0 = respuesta_f0
-        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
 
-    async def _create(self, model, messages, **kwargs):
-        system = messages[0]["content"]
-        self.llamadas.append(model)
+    async def completar(self, modelo, system, user, temperature, max_tokens):
+        self.llamadas.append(modelo)
         if system == TEXTS["es"]["sys_prompt_fase1_5"]:
             contenido = self.respuesta_cr
         elif system == TEXTS["es"]["sys_prompt_fase0"]:
@@ -75,9 +73,7 @@ class ClienteIAFalso:
                 ],
                 "constantes": [{"nombre": "GC_MODE", "valor": "'X'", "descripcion": "Modo"}],
             })
-        return SimpleNamespace(choices=[
-            SimpleNamespace(message=SimpleNamespace(content=contenido), finish_reason="stop")
-        ])
+        return RespuestaIA(contenido=contenido, finish_reason="stop")
 
 
 @pytest.fixture
@@ -220,10 +216,10 @@ def test_calibracion_sin_texto_extraible_se_avisa(tmp_path):
 
 def test_ejecutar_pipeline_no_levanta_si_falla_la_ia(tmp_path):
     class ClienteRoto(ClienteIAFalso):
-        async def _create(self, model, messages, **kwargs):
-            if model == "modelo-f4":
+        async def completar(self, modelo, system, user, temperature, max_tokens):
+            if modelo == "modelo-f4":
                 raise RuntimeError("servicio caído")
-            return await super()._create(model, messages, **kwargs)
+            return await super().completar(modelo, system, user, temperature, max_tokens)
 
     auditoria = RegistroAuditoria()
     resultado = asyncio.run(ejecutar_pipeline(

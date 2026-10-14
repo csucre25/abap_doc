@@ -31,12 +31,6 @@ from document_builder_afu import renderizar_documento_con_afu
 LANG = "es"
 logger = logging.getLogger(__name__)
 
-# El modelo por defecto (nemotron-3-super-120b-a12b) razona por defecto
-# (enable_thinking=True). Para las fases de extracción/mapeo JSON no queremos
-# que el "pensar en voz alta" se coma el presupuesto de max_tokens ni compita
-# con el truco de forzar el inicio de la respuesta.
-NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
-
 # Solo estos tipos tienen lógica propia (escrita por un desarrollador) y
 # ameritan pasar por Fase 2 (análisis IA) y Fase 4 (redacción IA).
 # TABL/DTEL/DOMA/VIEW/SHLP/TRAN/TABU (customizing real) se documentan tal
@@ -290,14 +284,11 @@ async def revisar_codigo(cliente_ia, modelo, metadata_str, abap_code_str, audito
     sys_prompt = TEXTS[LANG]["sys_prompt_fase1_5"]
     usr_prompt = TEXTS[LANG]["user_prompt_fase1_5"].format(metadata_json=metadata_str, codigo_abap=abap_code_str)
 
-    response_fase1_5 = await cliente_ia.chat.completions.create(
-        model=modelo,
-        messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": usr_prompt}],
-        temperature=0.1, max_tokens=1500,
-        extra_body=NO_THINKING,
+    response_fase1_5 = await cliente_ia.completar(
+        modelo, sys_prompt, usr_prompt, temperature=0.1, max_tokens=1500,
     )
 
-    review_txt = clean_json_response(response_fase1_5.choices[0].message.content.strip())
+    review_txt = clean_json_response(response_fase1_5.contenido.strip())
     auditoria.agregar("FASE 1.5 - CODE REVIEW", sys_prompt, review_txt)
 
     try:
@@ -325,17 +316,14 @@ async def task_phase_2(meta_str, abap_str, semaforo, delay_offset, cliente_ia, m
         base_delay = 2
         for attempt in range(max_retries):
             try:
-                response = await cliente_ia.chat.completions.create(
-                    model=modelo,
-                    messages=[
-                        {"role": "system", "content": TEXTS[LANG]["sys_prompt_fase2"]},
-                        {"role": "user", "content": TEXTS[LANG]["user_prompt_fase2"].format(metadata_json=meta_str, codigo_abap=abap_str)}
-                    ],
+                response = await cliente_ia.completar(
+                    modelo,
+                    TEXTS[LANG]["sys_prompt_fase2"],
+                    TEXTS[LANG]["user_prompt_fase2"].format(metadata_json=meta_str, codigo_abap=abap_str),
                     temperature=0.2,
                     max_tokens=3500,
-                    extra_body=NO_THINKING,
                 )
-                contenido = response.choices[0].message.content
+                contenido = response.contenido
                 if parsear_json_lote(contenido) is None and attempt < max_retries - 1:
                     logger.warning(f"Fase 2: JSON inválido (Intento {attempt + 1}/{max_retries}); se reintenta el lote.")
                     await asyncio.sleep(base_delay)
@@ -539,18 +527,11 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
                 contexto_funcional=contexto_funcional,
                 json_objetos=json.dumps(payload_para_ia, ensure_ascii=False),
             )
-            response_fase4 = await cliente_ia.chat.completions.create(
-                model=modelos.fase4,
-                messages=[
-                    {"role": "system", "content": sys_fase4},
-                    {"role": "user", "content": user_fase4},
-                ], temperature=0.0, max_tokens=8000,
-                extra_body=NO_THINKING,
+            response_fase4 = await cliente_ia.completar(
+                modelos.fase4, sys_fase4, user_fase4, temperature=0.0, max_tokens=8000,
             )
 
-        # Con "enable_thinking": False el modelo genera el objeto completo por su
-        # cuenta; no se concatena ningún prefijo manual.
-        json_ia_crudo = response_fase4.choices[0].message.content
+        json_ia_crudo = response_fase4.contenido
         json_ia_limpio = clean_json_response(json_ia_crudo)
         try:
             textos_ia = json.loads(json_ia_limpio)

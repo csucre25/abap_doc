@@ -12,8 +12,8 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     filters, ContextTypes, ConversationHandler
 )
-from openai import AsyncOpenAI
 from config import Config, ConfigError, cargar_config
+from ia import ClienteIA, crear_cliente_ia
 from document_parser import extract_text_from_file
 from messages import TEXTS
 from pipeline import (
@@ -51,7 +51,7 @@ def componer_mensaje_final(resultado) -> str:
 def obtener_config(context: ContextTypes.DEFAULT_TYPE) -> Config:
     return context.bot_data['config']
 
-def obtener_cliente_ia(context: ContextTypes.DEFAULT_TYPE) -> AsyncOpenAI:
+def obtener_cliente_ia(context: ContextTypes.DEFAULT_TYPE) -> ClienteIA:
     return context.bot_data['cliente_ia']
 
 async def loading_animation(status_msg, base_text, phase_key="loading_phrases_tech"):
@@ -362,7 +362,7 @@ def main():
     )
 
     app.bot_data['config'] = config
-    app.bot_data['cliente_ia'] = AsyncOpenAI(base_url=config.llm_base_url, api_key=config.llm_api_key)
+    app.bot_data['cliente_ia'] = crear_cliente_ia(config)
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start_command)],

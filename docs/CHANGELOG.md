@@ -2,6 +2,20 @@
 
 ## 2026-10-13
 
+### Proveedor de IA seleccionable por configuración
+- Nuevo `ia.py`: el núcleo solo conoce `ClienteIA.completar()`; ya no depende
+  de la forma de las respuestas del SDK de OpenAI ni de parámetros de NVIDIA.
+- Nueva variable `LLM_PROVIDER`: `nvidia` (por defecto, sin cambios),
+  `openai_compatible` (p. ej. un NIM propio) o `azure_openai` (requiere
+  `LLM_API_VERSION`; los modelos son nombres de despliegue).
+- Nueva variable `LLM_EXTRA_BODY`: parámetros propios del proveedor. El
+  `enable_thinking: false` de NVIDIA pasa a ser su valor por defecto en vez de
+  estar escrito en el código.
+- Una respuesta sin texto de la IA ya no rompe el Code Review.
+- Tests `tests/test_ia.py` y nuevos casos en `tests/test_config.py`. La ruta
+  de Azure OpenAI solo está probada con el cliente simulado, no contra un
+  recurso real.
+
 ### La calibración fallida ya no se confunde con la omitida
 - Antes, si la IA no devolvía un JSON válido para el documento de calibración
   (o el documento no tenía texto), el log decía "FASE 0 OMITIDA" y el usuario

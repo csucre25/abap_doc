@@ -2,17 +2,10 @@ import json
 import logging
 import pymupdf as fitz
 from docx import Document
-from openai import AsyncOpenAI
 from messages import TEXTS
 
 LANG = "es"
 logger = logging.getLogger(__name__)
-
-# El modelo por defecto (nemotron-3-super-120b-a12b) es un modelo de razonamiento
-# con "thinking" activado por defecto. Con enable_thinking=True el modelo ya no
-# continúa un mensaje "assistant" prefillado (genera su propio JSON completo
-# desde cero), así que se apaga el razonamiento y se elimina el truco del prefill.
-NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
 
 def extract_text_from_file(file_path: str) -> str:
     """Extrae el texto de un PDF o DOCX en milisegundos."""
@@ -61,24 +54,14 @@ def clean_json_response(raw_text: str) -> str:
             
     return text.strip()
 
-async def analyze_functional_text(raw_text: str, nvidia_client: AsyncOpenAI, modelo: str) -> dict:
+async def analyze_functional_text(raw_text: str, cliente_ia, modelo: str) -> dict:
     """Llama a la IA para analizar el texto funcional."""
     system_prompt = TEXTS[LANG]["sys_prompt_fase1"]
     user_prompt = TEXTS[LANG]["user_prompt_fase1"].format(texto_del_documento=raw_text)
 
-    response = await nvidia_client.chat.completions.create(
-        model=modelo,
-        messages=[
-            {"role": "system", "content": system_prompt}, 
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.0, max_tokens=6000,
-        extra_body=NO_THINKING,
-    )
-    
-    # Con "enable_thinking": False el modelo genera el JSON completo por su
-    # cuenta; ya no se concatena ningún prefijo manual.
-    cleaned_response = clean_json_response(response.choices[0].message.content)
+    response = await cliente_ia.completar(modelo, system_prompt, user_prompt, temperature=0.0, max_tokens=6000)
+
+    cleaned_response = clean_json_response(response.contenido)
     try:
         return json.loads(cleaned_response)
     except json.JSONDecodeError as e:
@@ -91,22 +74,14 @@ async def analyze_functional_text(raw_text: str, nvidia_client: AsyncOpenAI, mod
         }
     
 
-async def analyze_calibration_text(raw_text: str, nvidia_client: AsyncOpenAI, modelo: str) -> dict:
+async def analyze_calibration_text(raw_text: str, cliente_ia, modelo: str) -> dict:
     """Llama a la IA para analizar el texto de calibración."""
     system_prompt = TEXTS[LANG]["sys_prompt_fase0"]
     user_prompt = TEXTS[LANG]["user_prompt_fase0"].format(texto_historico=raw_text)
 
-    response = await nvidia_client.chat.completions.create(
-        model=modelo,
-        messages=[
-            {"role": "system", "content": system_prompt}, 
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.0, max_tokens=2048,
-        extra_body=NO_THINKING,
-    )
-    
-    contenido = response.choices[0].message.content or ""
+    response = await cliente_ia.completar(modelo, system_prompt, user_prompt, temperature=0.0, max_tokens=2048)
+
+    contenido = response.contenido
     cleaned_response = clean_json_response(contenido)
     try:
         return json.loads(cleaned_response)
@@ -114,7 +89,7 @@ async def analyze_calibration_text(raw_text: str, nvidia_client: AsyncOpenAI, mo
         # finish_reason y longitud distinguen "respondió vacío" de "se cortó por max_tokens".
         logger.warning(
             f"Error parseando Calibración JSON ({e}). modelo={modelo} "
-            f"finish_reason={response.choices[0].finish_reason} caracteres_recibidos={len(contenido)} "
+            f"finish_reason={response.finish_reason} caracteres_recibidos={len(contenido)} "
             f"inicio={cleaned_response[:100]!r}"
         )
         return {}
