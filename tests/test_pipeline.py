@@ -18,7 +18,7 @@ from pipeline import (
 )
 
 RAIZ = Path(__file__).resolve().parent.parent
-MODELOS = Modelos(fase1_5="modelo-cr", fase2="modelo-f2", fase4="modelo-f4")
+MODELOS = Modelos(fase0="modelo-f0", fase1="modelo-f1", fase1_5="modelo-cr", fase2="modelo-f2", fase4="modelo-f4")
 
 METADATA = {
     "system_info": {"sid": "DEV", "s4core": "108"},
@@ -157,6 +157,19 @@ def test_ejecutar_pipeline_genera_documento_sin_canal(zip_ot, tmp_path, monkeypa
     log = auditoria.texto()
     for fase in ("FASE 0 - CALIBRACIÓN", "FASE 1 - AFU", "FASE 2 - ABAP", "FASE 4 - TEXTOS", "FASE 5 - ARMADO DOCX"):
         assert fase in log
+
+
+def test_cada_fase_usa_su_modelo_y_la_plantilla_indicada(tmp_path):
+    cliente = ClienteIAFalso()
+    auditoria = RegistroAuditoria()
+    resultado = asyncio.run(ejecutar_pipeline(
+        EntradaPipeline(metadata_json=METADATA, abap_dict={}, calib_raw_text="estilo", afu_raw_text="requisitos"),
+        cliente, MODELOS, auditoria, dir_salida=str(tmp_path),
+        plantilla_path=str(RAIZ / "plantilla_dtss.docx"),  # ruta absoluta: no depende del directorio actual
+    ))
+    assert sorted(cliente.llamadas) == ["modelo-f0", "modelo-f1", "modelo-f2", "modelo-f2", "modelo-f4"]
+    assert resultado.docx_path and os.path.exists(resultado.docx_path)
+    assert f"plantilla={RAIZ / 'plantilla_dtss.docx'}" in auditoria.texto()
 
 
 def test_ejecutar_pipeline_no_levanta_si_falla_la_ia(tmp_path):

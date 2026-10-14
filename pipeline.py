@@ -19,10 +19,13 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from config import Modelos
 from document_parser import analyze_functional_text, analyze_calibration_text, clean_json_response
 from messages import TEXTS
 from sap_technical_tables import is_technical_noise
-from document_builder import construir_contexto, renderizar_documento, DocxBuildError, exportar_csv_configuracion
+from document_builder import (
+    construir_contexto, renderizar_documento, DocxBuildError, exportar_csv_configuracion, PLANTILLA_PATH,
+)
 from document_builder_afu import renderizar_documento_con_afu
 
 LANG = "es"
@@ -49,14 +52,6 @@ LOGIC_TYPES = ["PROG", "CLAS", "CLAS_SECTION", "FUNC", "ENHO", "METH", "REPS"]
 # ==========================================
 # CONTRATO ENTRE EL CANAL Y EL NÚCLEO
 # ==========================================
-@dataclass(frozen=True)
-class Modelos:
-    """Modelo de IA a usar en cada fase que orquesta el núcleo."""
-    fase1_5: str
-    fase2: str
-    fase4: str
-
-
 @dataclass
 class EntradaPipeline:
     metadata_json: dict
@@ -312,13 +307,13 @@ async def revisar_codigo(cliente_ia, modelo, metadata_str, abap_code_str, audito
 # ==========================================
 # FUNCIONES ASÍNCRONAS DEL PIPELINE IA
 # ==========================================
-async def task_phase_0(raw_text, cliente_ia):
+async def task_phase_0(raw_text, cliente_ia, modelo):
     if not raw_text: return {}
-    return await analyze_calibration_text(raw_text, cliente_ia)
+    return await analyze_calibration_text(raw_text, cliente_ia, modelo)
 
-async def task_phase_1(raw_text, cliente_ia):
+async def task_phase_1(raw_text, cliente_ia, modelo):
     if not raw_text: return {}
-    return await analyze_functional_text(raw_text, cliente_ia)
+    return await analyze_functional_text(raw_text, cliente_ia, modelo)
 
 async def task_phase_2(meta_str, abap_str, semaforo, delay_offset, cliente_ia, modelo):
     await asyncio.sleep(delay_offset)
@@ -352,7 +347,7 @@ async def task_phase_2(meta_str, abap_str, semaforo, delay_offset, cliente_ia, m
 
 async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Modelos,
                             auditoria: RegistroAuditoria, progreso=_sin_progreso,
-                            dir_salida: str = None) -> ResultadoPipeline:
+                            dir_salida: str = None, plantilla_path: str = None) -> ResultadoPipeline:
     """Corre las fases 0, 1, 2 y 4 y arma el Word. Nunca levanta excepción:
     cualquier falla queda descrita en resultado.mensaje, con lo que se haya
     alcanzado a generar (el registro de auditoría siempre queda en 'auditoria').
@@ -371,8 +366,8 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
             batches = create_processing_batches(logica_objs, system_info, entrada.abap_dict)
             semaforo = asyncio.Semaphore(3)
             tareas = [
-                asyncio.create_task(task_phase_0(entrada.calib_raw_text, cliente_ia)),
-                asyncio.create_task(task_phase_1(entrada.afu_raw_text, cliente_ia))
+                asyncio.create_task(task_phase_0(entrada.calib_raw_text, cliente_ia, modelos.fase0)),
+                asyncio.create_task(task_phase_1(entrada.afu_raw_text, cliente_ia, modelos.fase1))
             ]
             batch_obj_unicos = []  # paralelo a las tareas de Fase 2, mismo orden
             for index, (meta_str, abap_str, obj_unico) in enumerate(batches):
@@ -574,7 +569,7 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
         auditoria.agregar(
             "FASE 5 - ARMADO DOCX (CONTEXTO ENVIADO A LA PLANTILLA)",
             ("base=AFU original + secciones técnicas (requisitos funcionales incluidos)" if incluir_funcional
-             else f"plantilla={os.getenv('PLANTILLA_DTSS_PATH', 'plantilla_dtss.docx')}"),
+             else f"plantilla={plantilla_path or PLANTILLA_PATH}"),
             json.dumps(contexto_docx, indent=2, ensure_ascii=False)[:8000]
         )
         try:
@@ -593,7 +588,8 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
                     if os.path.exists(afu_base_path):
                         os.remove(afu_base_path)
             else:
-                renderizar_documento(contexto_docx, docx_path, imagenes_tmp_dir=dir_salida)
+                renderizar_documento(contexto_docx, docx_path, plantilla_path=plantilla_path,
+                                     imagenes_tmp_dir=dir_salida)
             resultado.docx_path = docx_path
 
             # CSV crudo (sin compactar columnas) por cada objeto de customizing,

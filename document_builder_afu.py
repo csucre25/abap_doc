@@ -22,6 +22,7 @@
 
 import os
 import re
+import tempfile
 import traceback
 from datetime import datetime
 
@@ -476,7 +477,7 @@ def renderizar_documento_con_afu(contexto: dict, afu_docx_path: str, output_path
 
     Si falla, levanta DocxBuildError con traceback + resumen del contexto,
     igual que renderizar_documento(), para volcarlo tal cual a un log."""
-    imagenes_tmp_dir = imagenes_tmp_dir or os.getenv("TMPDIR", "/tmp")
+    imagenes_tmp_dir = imagenes_tmp_dir or tempfile.gettempdir()
     constructor = None
     try:
         doc = Document(afu_docx_path)

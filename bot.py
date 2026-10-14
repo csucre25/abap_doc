@@ -6,26 +6,23 @@ import html
 import asyncio
 import random
 from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     filters, ContextTypes, ConversationHandler
 )
 from openai import AsyncOpenAI
+from config import Config, ConfigError, cargar_config
 from document_parser import extract_text_from_file
 from messages import TEXTS
 from pipeline import (
-    EntradaPipeline, Modelos, RegistroAuditoria, ZipSinMetadataError,
+    EntradaPipeline, RegistroAuditoria, ZipSinMetadataError,
     ejecutar_pipeline, revisar_codigo, leer_zip_ot, get_file_timestamp,
 )
 
 # ==========================================
-# CONFIGURACIÓN INICIAL Y LOGGING
+# LOGGING (la configuración se carga y valida en main(), ver config.py)
 # ==========================================
-load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 LANG = "es"
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -33,16 +30,6 @@ logger = logging.getLogger(__name__)
 # httpx (usado por python-telegram-bot) loguea cada request en INFO con la URL completa,
 # y esa URL incluye el token del bot. Se sube a WARNING para que no quede en consola/logs.
 logging.getLogger("httpx").setLevel(logging.WARNING)
-
-nvidia_client = AsyncOpenAI(base_url="https://integrate.api.nvidia.com/v1", api_key=NVIDIA_API_KEY)
-
-# CARGA DE MODELOS CON FALLBACK AL DEFAULT
-MODEL_DEFAULT   = os.getenv("LLM_MODEL_DEFAULT", "nvidia/nemotron-3-super-120b-a12b")
-MODELOS = Modelos(
-    fase1_5=os.getenv("LLM_MODEL_FASE1_5", MODEL_DEFAULT),
-    fase2=os.getenv("LLM_MODEL_FASE2", MODEL_DEFAULT),
-    fase4=os.getenv("LLM_MODEL_FASE4", MODEL_DEFAULT),
-)
 
 # ==========================================
 # ESTADOS DE CONVERSACIÓN
@@ -54,6 +41,12 @@ WAITING_CALIBRATION, WAITING_AFU, WAITING_ZIP, WAITING_CR_CHOICE, WAITING_CR_DEC
 # ==========================================
 def obtener_auditoria(context: ContextTypes.DEFAULT_TYPE) -> RegistroAuditoria:
     return context.user_data.setdefault('audit_log', RegistroAuditoria())
+
+def obtener_config(context: ContextTypes.DEFAULT_TYPE) -> Config:
+    return context.bot_data['config']
+
+def obtener_cliente_ia(context: ContextTypes.DEFAULT_TYPE) -> AsyncOpenAI:
+    return context.bot_data['cliente_ia']
 
 async def loading_animation(status_msg, base_text, phase_key="loading_phrases_tech"):
     phrases = TEXTS[LANG].get(phase_key, TEXTS[LANG]["loading_phrases_tech"]).copy()
@@ -210,7 +203,7 @@ async def handle_cr_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(TEXTS[LANG]["msg_cr_analyzing"])
     async with progreso_en(status_msg)(TEXTS[LANG]["msg_cr_analyzing"]):
         code_review = await revisar_codigo(
-            nvidia_client, MODELOS.fase1_5,
+            obtener_cliente_ia(context), obtener_config(context).modelos.fase1_5,
             context.user_data['metadata_str'], context.user_data['abap_code_str'],
             obtener_auditoria(context),
         )
@@ -260,8 +253,10 @@ async def execute_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
             afu_docx_bytes=context.user_data.get('afu_docx_bytes'),
             incluir_funcional=context.user_data.get('incluir_funcional', False),
         )
+        config = obtener_config(context)
         resultado = await ejecutar_pipeline(
-            entrada, nvidia_client, MODELOS, auditoria, progreso=progreso_en(status_msg)
+            entrada, obtener_cliente_ia(context), config.modelos, auditoria,
+            progreso=progreso_en(status_msg), plantilla_path=config.plantilla_path,
         )
         await status_msg.edit_text(resultado.mensaje, parse_mode='HTML' if resultado.mensaje_html else None)
 
@@ -334,17 +329,22 @@ async def handle_unexpected_input(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text(mensaje, parse_mode='HTML')
 
 def main():
-    if not TELEGRAM_TOKEN or not NVIDIA_API_KEY:
-        logger.error(TEXTS[LANG]["log_missing_creds"])
+    try:
+        config = cargar_config()
+    except ConfigError as e:
+        logger.error(e)
         return
 
     app = (
         Application.builder()
-        .token(TELEGRAM_TOKEN)
+        .token(config.telegram_token)
         .connect_timeout(30.0)
         .read_timeout(30.0)
         .build()
     )
+
+    app.bot_data['config'] = config
+    app.bot_data['cliente_ia'] = AsyncOpenAI(base_url=config.llm_base_url, api_key=config.llm_api_key)
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start_command)],

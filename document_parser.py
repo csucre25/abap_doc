@@ -1,10 +1,8 @@
 import json
-import os
 import pymupdf as fitz
 from docx import Document
 from openai import AsyncOpenAI
 from messages import TEXTS
-from dotenv import load_dotenv
 
 LANG = "es"
 
@@ -13,11 +11,6 @@ LANG = "es"
 # continúa un mensaje "assistant" prefillado (genera su propio JSON completo
 # desde cero), así que se apaga el razonamiento y se elimina el truco del prefill.
 NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
-
-# CARGA DE MODELOS CON FALLBACK AL DEFAULT
-MODEL_DEFAULT = os.getenv("LLM_MODEL_DEFAULT", "nvidia/nemotron-3-super-120b-a12b")
-MODEL_FASE0   = os.getenv("LLM_MODEL_FASE0", MODEL_DEFAULT)
-MODEL_FASE1   = os.getenv("LLM_MODEL_FASE1", MODEL_DEFAULT)
 
 def extract_text_from_file(file_path: str) -> str:
     """Extrae el texto de un PDF o DOCX en milisegundos."""
@@ -66,13 +59,13 @@ def clean_json_response(raw_text: str) -> str:
             
     return text.strip()
 
-async def analyze_functional_text(raw_text: str, nvidia_client: AsyncOpenAI) -> dict:
+async def analyze_functional_text(raw_text: str, nvidia_client: AsyncOpenAI, modelo: str) -> dict:
     """Llama a la IA para analizar el texto funcional."""
     system_prompt = TEXTS[LANG]["sys_prompt_fase1"]
     user_prompt = TEXTS[LANG]["user_prompt_fase1"].format(texto_del_documento=raw_text)
 
     response = await nvidia_client.chat.completions.create(
-        model=MODEL_FASE1,
+        model=modelo,
         messages=[
             {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": user_prompt},
@@ -96,13 +89,13 @@ async def analyze_functional_text(raw_text: str, nvidia_client: AsyncOpenAI) -> 
         }
     
 
-async def analyze_calibration_text(raw_text: str, nvidia_client: AsyncOpenAI) -> dict:
+async def analyze_calibration_text(raw_text: str, nvidia_client: AsyncOpenAI, modelo: str) -> dict:
     """Llama a la IA para analizar el texto de calibración."""
     system_prompt = TEXTS[LANG]["sys_prompt_fase0"]
     user_prompt = TEXTS[LANG]["user_prompt_fase0"].format(texto_historico=raw_text)
 
     response = await nvidia_client.chat.completions.create(
-        model=MODEL_FASE0,
+        model=modelo,
         messages=[
             {"role": "system", "content": system_prompt}, 
             {"role": "user", "content": user_prompt},

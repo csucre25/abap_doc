@@ -5,3 +5,4 @@ ajustes_tecnicos.json
 __pycache__/
 *.pyc
 .pytest_cache/
+salida_prueba/

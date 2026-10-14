@@ -11,15 +11,16 @@
 import os
 import csv
 import json
+import tempfile
 import traceback
 import html
 from datetime import datetime
 from docx.shared import Cm
 from docxtpl import DocxTemplate
 
-# Ruta a la plantilla; configurable por variable de entorno para no
-# hardcodear rutas absolutas en el bot.
-PLANTILLA_PATH = os.getenv("PLANTILLA_DTSS_PATH", "plantilla_dtss.docx")
+# Plantilla por defecto cuando no se pasa 'plantilla_path'. La ruta
+# configurable (PLANTILLA_DTSS_PATH) se resuelve en config.py.
+PLANTILLA_PATH = "plantilla_dtss.docx"
 
 # Etiquetas legibles para el "badge" de tipo de objeto en la tabla.
 LABELS_TIPO = {
@@ -531,7 +532,7 @@ def renderizar_documento(contexto: dict, output_path: str, plantilla_path: str =
     vs las que se le mandaron + resumen del contexto usado — pensado para
     volcarse íntegro al log de auditoría, no solo mostrar str(e)."""
     plantilla_path = plantilla_path or PLANTILLA_PATH
-    imagenes_tmp_dir = imagenes_tmp_dir or os.getenv("TMPDIR", "/tmp")
+    imagenes_tmp_dir = imagenes_tmp_dir or tempfile.gettempdir()
     doc = DocxTemplate(plantilla_path)
 
     # --- Subdoc: tabla de Órdenes de Transporte ---
