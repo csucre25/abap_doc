@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-14
+
+### Se elimina la extracción de constantes por IA
+- La fase 4 ya no pide a la IA una lista de constantes de código. Con
+  `gpt-4o` se detectó que inventaba constantes inexistentes (llegó a copiar
+  el ejemplo `GC_MODE` del propio prompt).
+- La sección no llegaba al Word (la plantilla y el modo AFU ya no la tenían);
+  solo aparecía en el JSON de respaldo, del que también se quita.
+- Las constantes de negocio (ZTCONSTANTES y similares) siguen documentándose
+  en la sección 5.3 Configuración, leídas directamente de la metadata, sin IA.
+- Tests actualizados en `tests/test_pipeline.py`.
+
 ## 2026-10-13
 
 ### El registro de auditoría anota la causa cuando el pipeline se interrumpe

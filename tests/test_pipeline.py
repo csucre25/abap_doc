@@ -71,7 +71,6 @@ class ClienteIAFalso:
                 "redacciones": [
                     {"nombre": "ZR_DEMO", "justificacion": "Valor de negocio.", "logica_tecnica": "Resumen."},
                 ],
-                "constantes": [{"nombre": "GC_MODE", "valor": "'X'", "descripcion": "Modo"}],
             })
         return RespuestaIA(contenido=contenido, finish_reason="stop")
 
@@ -148,7 +147,7 @@ def test_ejecutar_pipeline_genera_documento_sin_canal(zip_ot, tmp_path, monkeypa
     assert [o["nombre"] for o in borrador["objetos_diccionario"]] == ["ZT_DEMO"]
     assert [o["nombre"] for o in borrador["configuracion"]] == ["ZTCONSTANTES"]
     assert [o["nombre"] for o in borrador["objetos_omitidos_ruido"]] == ["TDDAT", "VIEWFRAME_ZV_DEMO"]
-    assert borrador["constantes"][0]["nombre"] == "GC_MODE"
+    assert "constantes" not in borrador  # ZTCONSTANTES va en "configuracion", no hay sección aparte
 
     assert [Path(c).name for c in resultado.csvs_configuracion] == ["ZTCONSTANTES_customizing.csv"]
     assert Path(resultado.csvs_configuracion[0]).read_text(encoding="utf-8").splitlines() == [
@@ -259,3 +258,9 @@ def test_el_nucleo_no_depende_de_telegram():
     codigo = "import sys, pipeline; sys.exit(1 if any(m.split('.')[0] == 'telegram' for m in sys.modules) else 0)"
     proceso = subprocess.run([sys.executable, "-c", codigo], cwd=RAIZ, capture_output=True, text=True)
     assert proceso.returncode == 0, proceso.stderr
+
+
+def test_la_redaccion_no_pide_constantes_a_la_ia():
+    # Se pedían constantes de código a la IA y las inventaba (copiaba el ejemplo del prompt).
+    assert "constantes" not in TEXTS["es"]["sys_prompt_fase4"].lower()
+    assert "GC_MODE" not in TEXTS["es"]["sys_prompt_fase4"]

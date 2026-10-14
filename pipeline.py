@@ -496,7 +496,6 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
                 for o in objetos_config
             ],
             "objetos_omitidos_ruido": [objeto_ruido_desde_metadata(o) for o in ruido_objs],
-            "constantes": [],
             "ordenes_transporte": []
         }
 
@@ -537,7 +536,7 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
             textos_ia = json.loads(json_ia_limpio)
         except json.JSONDecodeError:
             logger.error("Error crítico: La IA no devolvió un JSON válido en la Fase 4.")
-            textos_ia = {"redacciones": [], "constantes": []}
+            textos_ia = {"redacciones": []}
 
         auditoria.agregar("FASE 4 - TEXTOS GENERADOS", sys_fase4, json.dumps(textos_ia, indent=2, ensure_ascii=False))
 
@@ -547,7 +546,6 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
                 obj["justificacion"] = dict_textos[obj["nombre"]].get("justificacion", "")
                 obj["logica_tecnica"] = dict_textos[obj["nombre"]].get("logica_tecnica", "")
 
-        dtss_final["constantes"] = textos_ia.get("constantes", [])
         resultado.borrador_json = json.dumps(dtss_final, indent=2, ensure_ascii=False)
 
         # ---------------------------------------------------------

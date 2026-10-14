@@ -165,7 +165,8 @@ def construir_contexto(dtss_final: dict, metadata_json: dict,
         for o in dtss_final.get("objetos_diccionario", [])
     ]
 
-    constantes = dtss_final.get("constantes", [])
+    # Las constantes de negocio (ZTCONSTANTES y similares) llegan como
+    # customizing en "configuracion"; no hay sección aparte de constantes.
     configuracion = dtss_final.get("configuracion", [])
 
     # metadata_json["transport_request"] hoy es un único dict (una sola OT).
@@ -186,7 +187,6 @@ def construir_contexto(dtss_final: dict, metadata_json: dict,
         "fecha": datetime.now().strftime("%d/%m/%Y"),
         "objetos_logica": objetos_logica,
         "objetos_diccionario": objetos_diccionario,
-        "constantes": constantes,
     }
     if escapar_xml:
         contexto = _escapar_xml(contexto)
@@ -206,7 +206,7 @@ def _resumen_contexto(contexto: dict) -> str:
     """Resumen legible del contexto para el log: conteos + una muestra
     truncada de cada lista, en vez de volcar código fuente completo."""
     lineas = [f"cliente={contexto.get('cliente')!r}  proyecto={contexto.get('proyecto')!r}"]
-    for clave in ["objetos_logica", "objetos_diccionario", "constantes", "ordenes_transporte", "configuracion"]:
+    for clave in ["objetos_logica", "objetos_diccionario", "ordenes_transporte", "configuracion"]:
         valor = contexto.get(clave, [])
         lineas.append(f"- {clave}: {len(valor)} elemento(s)")
         if valor:
