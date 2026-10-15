@@ -45,6 +45,7 @@ from sapdoc.application.puertos import DocxBuildError  # noqa: E402,F401
 
 
 def _tipo_label(tipo: str) -> str:
+    """Etiqueta legible del tipo de objeto SAP (TABL → TABLA); si no se conoce, el código tal cual."""
     return LABELS_TIPO.get(tipo, tipo or "OBJETO")
 
 
@@ -135,6 +136,9 @@ def construir_contexto(dtss_final: dict, metadata_json: dict,
     #                     texto como XML crudo.
     # escapar_xml=False → para document_builder_afu.py, que escribe directo con
     #                     python-docx (ya escapa por su cuenta).
+    """Convierte dtss_final y la metadata en el diccionario de variables que espera
+    la plantilla (y que reutiliza el modo AFU): objetos de lógica y diccionario,
+    configuración y órdenes de transporte."""
     objetos_logica = [
         {
             "object_type_label": _tipo_label(o.get("tipo", "")),
@@ -273,6 +277,8 @@ FUENTES_MONOESPACIADAS_BOLD = [
 
 
 def _cargar_fuente(tamano, negrita=False):
+    """Primera fuente monoespaciada disponible en el sistema; si no hay ninguna,
+    la fuente bitmap por defecto de Pillow."""
     from PIL import ImageFont
     for ruta in (FUENTES_MONOESPACIADAS_BOLD if negrita else FUENTES_MONOESPACIADAS):
         try:
@@ -305,6 +311,7 @@ def _generar_imagen_tabla(columnas, filas, ruta_png, tamano_fuente=20):
     tmp_draw = ImageDraw.Draw(tmp)
 
     def ancho_texto(texto, f):
+        """Ancho en píxeles que ocupa un texto con la fuente dada."""
         bbox = tmp_draw.textbbox((0, 0), texto, font=f)
         return bbox[2] - bbox[0]
 
@@ -468,6 +475,9 @@ def _tabla_configuracion_compacta(subdoc, columnas, filas):
 #     return subdoc 
 
 def _construir_tabla_campos_subdoc(doc, campos, imagenes_tmp_dir, prefijo_img):
+    """Subdocumento con los campos de un objeto de diccionario: los convierte
+    en filas (DDIC, customizing o clave/valor) y los dibuja como imagen;
+    si la imagen falla, como tabla nativa."""
     subdoc = doc.new_subdoc()
     if not campos:
         subdoc.add_paragraph("Sin campos registrados.")

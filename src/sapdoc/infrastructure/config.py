@@ -36,6 +36,7 @@ class ConfigError(Exception):
     encontrados, no solo el primero, para corregirlos de una vez."""
 
     def __init__(self, problemas):
+        """Recibe la lista de problemas y arma un mensaje con uno por línea."""
         self.problemas = list(problemas)
         super().__init__("Configuración inválida:\n" + "\n".join(f"- {p}" for p in self.problemas))
 
@@ -43,6 +44,7 @@ class ConfigError(Exception):
 @dataclass(frozen=True)
 class Config:
     # repr=False: los secretos no deben aparecer si el objeto termina en un log.
+    """Configuración validada y de solo lectura. La crea cargar_config() al arrancar."""
     telegram_token: str = field(repr=False)
     # Usuarios autorizados (archivo JSON aparte). Vacío = nadie puede usar el bot.
     usuarios_path: str
@@ -57,6 +59,7 @@ class Config:
     auditoria_path: str = AUDITORIA_PATH_DEFAULT
 
     def usuario_telegram(self, telegram_id) -> Usuario | None:
+        """El usuario autorizado con ese ID de Telegram, o None si no está en la lista."""
         return next((u for u in self.usuarios if u.telegram_id == telegram_id), None)
 
 

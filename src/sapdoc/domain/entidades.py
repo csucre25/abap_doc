@@ -24,6 +24,9 @@ class Usuario:
 
 @dataclass
 class EntradaPipeline:
+    """Lo que el canal entrega al caso de uso, ya leído de los archivos subidos:
+    metadata y fuentes ABAP del ZIP, texto de calibración y AFU, el .docx
+    original del AFU y si se pidió el DTSS completo (técnico + funcional)."""
     metadata_json: dict
     abap_dict: dict
     calib_raw_text: str | None = None
@@ -33,6 +36,8 @@ class EntradaPipeline:
 
 @dataclass
 class ResultadoPipeline:
+    """Lo que el caso de uso devuelve al canal: el mensaje final, las rutas del
+    Word y los CSV generados, el JSON estructurado y los avisos para el usuario."""
     mensaje: str = ""
     mensaje_html: bool = True
     docx_path: str | None = None

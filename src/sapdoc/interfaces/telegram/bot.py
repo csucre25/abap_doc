@@ -1,3 +1,12 @@
+"""Canal Telegram: conversación paso a paso con el usuario.
+
+Solo se ocupa del canal: control de acceso, descarga de archivos, botones,
+animación de progreso, registro en la bitácora y envío de resultados. El
+trabajo de documentar lo hace sapdoc.application.documentar_ot.
+
+Conversación: /start → calibración (o saltar) → AFU → ZIP de la OT →
+[Code Review → ignorar o cancelar] → generación y envío del Word."""
+
 import os
 import json
 import logging
@@ -50,6 +59,7 @@ WAITING_CALIBRATION, WAITING_AFU, WAITING_ZIP, WAITING_CR_CHOICE, WAITING_CR_DEC
 # UTILIDADES Y HELPER FUNCTIONS
 # ==========================================
 def obtener_auditoria(context: ContextTypes.DEFAULT_TYPE) -> RegistroAuditoria:
+    """Registro de prompts y respuestas de la conversación actual (se crea al usarlo)."""
     return context.user_data.setdefault('audit_log', RegistroAuditoria())
 
 def componer_mensaje_final(resultado) -> str:
@@ -58,12 +68,15 @@ def componer_mensaje_final(resultado) -> str:
     return "\n\n".join([resultado.mensaje] + [f"⚠️ {a}" for a in avisos])
 
 def obtener_config(context: ContextTypes.DEFAULT_TYPE) -> Config:
+    """Configuración validada que main() dejó en bot_data al arrancar."""
     return context.bot_data['config']
 
 def obtener_cliente_ia(context: ContextTypes.DEFAULT_TYPE) -> ClienteIA:
+    """Cliente del proveedor de IA compartido por todas las conversaciones."""
     return context.bot_data['cliente_ia']
 
 def obtener_bitacora(context: ContextTypes.DEFAULT_TYPE) -> Bitacora:
+    """Registro de auditoría permanente compartido por todas las conversaciones."""
     return context.bot_data['bitacora']
 
 def quien(context: ContextTypes.DEFAULT_TYPE, usuario_tg) -> dict:
@@ -76,14 +89,19 @@ def quien(context: ContextTypes.DEFAULT_TYPE, usuario_tg) -> dict:
     }
 
 def datos_ot(context: ContextTypes.DEFAULT_TYPE) -> dict:
+    """Número y descripción de la OT cargada en la conversación, para la bitácora."""
     tr = (context.user_data.get('metadata_json') or {}).get('transport_request', {}) or {}
     return {"orden": tr.get('id'), "descripcion": tr.get('description')}
 
 def guardar_huella_entrada(context: ContextTypes.DEFAULT_TYPE, clave: str, nombre: str, ruta: str):
+    """Guarda nombre, tamaño y SHA-256 de un archivo subido (no su contenido)
+    para registrarlos al iniciar la ejecución."""
     with open(ruta, 'rb') as f:
         context.user_data.setdefault('entradas', {})[clave] = huella_archivo(nombre, f.read())
 
 async def loading_animation(status_msg, base_text, phase_key="loading_phrases_tech"):
+    """Edita el mensaje de estado cada 4 s con una frase distinta mientras dura una
+    fase de IA. Termina cuando se cancela la tarea."""
     phrases = TEXTS[LANG].get(phase_key, TEXTS[LANG]["loading_phrases_tech"]).copy()
     random.shuffle(phrases)
     try:
@@ -105,6 +123,7 @@ def progreso_en(status_msg):
     'status_msg' mientras dura cada fase de IA."""
     @asynccontextmanager
     async def progreso(base_text):
+        """Lanza la animación al entrar y la cancela al salir de la fase."""
         loader_task = asyncio.create_task(loading_animation(status_msg, base_text))
         try:
             yield
@@ -116,6 +135,8 @@ def progreso_en(status_msg):
 # HANDLERS: FLUJO DE DOCUMENTOS
 # ==========================================
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Paso 1 (/start): limpia la conversación anterior y pide el documento de
+    calibración, con un botón para saltarlo."""
     context.user_data.clear()
     keyboard = [[InlineKeyboardButton(TEXTS[LANG]["btn_skip_calib"], callback_data='skip_calib')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -123,6 +144,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_CALIBRATION
 
 async def skip_calibration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Paso 1 (botón 'Saltar'): sigue sin calibración; se usará el estilo por defecto."""
     query = update.callback_query
     await query.answer()
     context.user_data['calib_raw_text'] = None
@@ -131,6 +153,8 @@ async def skip_calibration(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_AFU
 
 async def handle_calibration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Paso 1: recibe el documento de calibración (.docx o .pdf), guarda su huella
+    y su texto, y pasa a pedir el AFU."""
     document = update.message.document
     if not document.file_name.endswith(('.docx', '.pdf')):
         await update.message.reply_text(TEXTS[LANG]["msg_invalid_word"])
@@ -152,6 +176,8 @@ async def handle_calibration(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return WAITING_AFU
 
 async def handle_afu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Paso 2: recibe el documento funcional (AFU), guarda su huella y su texto, y
+    conserva el .docx original para el modo DTSS completo. Pasa a pedir el ZIP."""
     document = update.message.document
     if not document.file_name.endswith(('.docx', '.pdf')):
         await update.message.reply_text(TEXTS[LANG]["msg_invalid_word"])
@@ -179,6 +205,8 @@ async def handle_afu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return WAITING_ZIP
 
 async def handle_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Paso 3: recibe el ZIP de la OT, lo lee (metadata.json y fuentes .abap) y
+    ofrece los botones: Code Review, solo técnica o técnica + funcional."""
     document = update.message.document
     if not document.file_name.endswith('.zip'):
         await update.message.reply_text(TEXTS[LANG]["msg_invalid_zip"])
@@ -226,6 +254,8 @@ async def handle_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # HANDLERS: CODE REVIEW (OPCIONAL)
 # ==========================================
 async def handle_cr_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Paso 4: según el botón, genera directamente o ejecuta antes el Code Review.
+    Si el Code Review encuentra hallazgos, los muestra y espera la decisión."""
     query = update.callback_query
     await query.answer()
     status_msg = context.user_data['internal_status_msg']
@@ -274,6 +304,8 @@ async def handle_cr_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
 async def handle_cr_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Paso 5: tras ver los hallazgos, el usuario los ignora (se genera el documento
+    y queda registrado) o cancela (vuelve a esperar un ZIP)."""
     query = update.callback_query
     await query.answer()
     if query.data == 'ignore_cr':
@@ -293,6 +325,9 @@ async def handle_cr_decision(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # EJECUCIÓN DEL PIPELINE Y ENVÍO DE RESULTADOS
 # ==========================================
 async def execute_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Paso final: registra el inicio en la bitácora, ejecuta el caso de uso con
+    animación de progreso, registra el resultado y envía al usuario el log, el
+    Word, los CSV y el JSON, borrando cada archivo temporal tras enviarlo."""
     status_msg = context.user_data['internal_status_msg']
     auditoria = obtener_auditoria(context)
     resultado = None
@@ -411,6 +446,7 @@ def registrar_fin_ejecucion(bitacora: Bitacora, id_ejecucion: str, resultado, du
 # GESTIÓN GLOBAL Y ARRANQUE
 # ==========================================
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/cancel: abandona la conversación en curso y borra lo que se había subido."""
     await update.message.reply_text(TEXTS[LANG]["msg_global_cancel"])
     context.user_data.clear()
     return ConversationHandler.END
@@ -466,6 +502,9 @@ async def control_acceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raise ApplicationHandlerStop
 
 def construir_app(config: Config) -> Application:
+    """Crea la aplicación de Telegram: comparte configuración, cliente de IA,
+    bitácora y generador de Word en bot_data, registra el control de acceso antes
+    que nada y define la conversación paso a paso."""
     app = (
         Application.builder()
         .token(config.telegram_token)
@@ -508,6 +547,8 @@ def construir_app(config: Config) -> Application:
     return app
 
 def main():
+    """Punto de entrada (python -m sapdoc o sapdoc-telegram): valida la configuración,
+    construye la aplicación y escucha mensajes por long-polling."""
     try:
         config = cargar_config()
     except ConfigError as e:

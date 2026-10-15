@@ -111,6 +111,8 @@ def objeto_diccionario_desde_metadata(obj):
 
 
 def objeto_ruido_desde_metadata(obj):
+    """Entrada de 'objetos_omitidos_ruido': el objeto autogenerado por SAP y el
+    motivo por el que no se documenta."""
     return {
         "nombre": obj.get("object_name", ""),
         "tipo": obj.get("object_type", ""),

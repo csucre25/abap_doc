@@ -1,4 +1,6 @@
-# messages.py
+"""Todos los textos de la aplicación en un solo lugar: mensajes que ve el
+usuario en el chat, frases de progreso y los prompts de cada fase de IA.
+Se acceden como TEXTS["es"]["clave"]."""
 
 TEXTS = {
     "es": {

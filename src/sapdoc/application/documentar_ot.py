@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _sin_progreso(texto_base):
+    """Progreso por defecto: no muestra nada (útil en tests o canales sin indicador)."""
     yield
 
 
@@ -70,14 +71,23 @@ def create_processing_batches(objects, system_info, abap_dict, max_chars_per_bat
 
 
 async def task_phase_0(raw_text, cliente_ia, modelo):
+    """Fase 0: extrae el estilo de redacción del documento de calibración.
+    Devuelve {} si no hay texto (calibración omitida o documento sin texto)."""
     if not (raw_text or "").strip(): return {}
     return await analyze_calibration_text(raw_text, cliente_ia, modelo)
 
 async def task_phase_1(raw_text, cliente_ia, modelo):
+    """Fase 1: extrae objetivo y requerimientos del documento funcional (AFU).
+    Devuelve {} si no se subió AFU."""
     if not raw_text: return {}
     return await analyze_functional_text(raw_text, cliente_ia, modelo)
 
 async def task_phase_2(meta_str, abap_str, semaforo, delay_offset, cliente_ia, modelo):
+    """Fase 2: analiza con IA un lote (un objeto con lógica) y devuelve el texto crudo.
+
+    Espera 'delay_offset' segundos y respeta el semáforo para no saturar al
+    proveedor. Reintenta si la respuesta no es un JSON legible o si la llamada
+    falla; tras el último intento devuelve "[]" en vez de propagar el error."""
     await asyncio.sleep(delay_offset)
     async with semaforo:
         max_retries = 3
@@ -220,6 +230,7 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia: ClienteIA, mod
         # Se normaliza espacios en ambos lados del cruce para no perder el
         # código real por una diferencia cosmética de formato.
         def _normalizar_nombre(n):
+            """Colapsa los espacios repetidos de un nombre de objeto."""
             return " ".join((n or "").split())
 
         logica_meta_by_name = {_normalizar_nombre(o.get("object_name", "")): o for o in logica_objs}

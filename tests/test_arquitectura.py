@@ -41,6 +41,16 @@ def test_cada_capa_solo_importa_hacia_dentro(capa):
     assert not violaciones, "\n".join(violaciones)
 
 
+def test_toda_funcion_y_clase_esta_documentada():
+    sin_docstring = [
+        f"{ruta.relative_to(PAQUETE)}:{nodo.lineno} {nodo.name}"
+        for ruta in sorted(PAQUETE.rglob("*.py"))
+        for nodo in ast.walk(ast.parse(ruta.read_text(encoding="utf-8")))
+        if isinstance(nodo, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and not ast.get_docstring(nodo)
+    ]
+    assert not sin_docstring, "Sin docstring:\n" + "\n".join(sin_docstring)
+
+
 @pytest.mark.parametrize("capa", ["domain", "application"])
 def test_el_nucleo_no_usa_bibliotecas_de_entrada_salida(capa):
     violaciones = [

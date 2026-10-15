@@ -23,10 +23,12 @@ HASH_INICIAL = "0" * 64
 
 
 def sha256_bytes(datos: bytes) -> str:
+    """Huella SHA-256 (hex) de un contenido en memoria."""
     return hashlib.sha256(datos).hexdigest()
 
 
 def sha256_archivo(ruta: str) -> str:
+    """Huella SHA-256 (hex) de un archivo, leído por bloques para no cargarlo entero."""
     h = hashlib.sha256()
     with open(ruta, "rb") as f:
         for bloque in iter(lambda: f.read(1024 * 1024), b""):
@@ -40,12 +42,16 @@ def huella_archivo(nombre: str, datos: bytes) -> dict:
 
 
 def _hash_evento(evento: dict) -> str:
+    """Huella de un evento en forma canónica (claves ordenadas), para que el mismo
+    contenido produzca siempre el mismo hash."""
     canonico = json.dumps(evento, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return sha256_bytes(canonico.encode("utf-8"))
 
 
 class Bitacora:
+    """Escritor del registro de auditoría permanente. Una instancia por proceso."""
     def __init__(self, ruta: str):
+        """Crea la carpeta si hace falta y retoma la cadena desde el último evento."""
         self.ruta = ruta
         self._lock = threading.Lock()
         carpeta = os.path.dirname(ruta)
@@ -54,6 +60,7 @@ class Bitacora:
         self._ultimo_hash = self._leer_ultimo_hash()
 
     def _leer_ultimo_hash(self) -> str:
+        """Hash del último evento escrito, o el hash inicial si el archivo no existe."""
         if not os.path.exists(self.ruta):
             return HASH_INICIAL
         ultima = None

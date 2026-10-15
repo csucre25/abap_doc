@@ -160,6 +160,8 @@ def _adaptar_portada(doc, reemplazos=REEMPLAZOS_PORTADA):
 
 
 def _adaptar_encabezado_pie(doc, reemplazos=REEMPLAZOS_ENCABEZADO_PIE):
+    """AFU → DTSS en encabezados y pies de página, incluido el texto que vive
+    dentro de tablas; respeta los vinculados a la sección anterior."""
     compilados = [(re.compile(p), r) for p, r in reemplazos]
     for sec in doc.sections:
         partes = [sec.header, sec.footer, sec.first_page_header, sec.first_page_footer,
@@ -178,6 +180,8 @@ def _adaptar_encabezado_pie(doc, reemplazos=REEMPLAZOS_ENCABEZADO_PIE):
 
 
 def _ajustar_settings(doc):
+    """Quita la protección del documento y pide a Word que actualice los campos
+    (índice, numeración) al abrirlo, según las opciones de configuración."""
     settings = doc.settings.element
     if QUITAR_PROTECCION:
         for el in settings.findall(qn("w:documentProtection")):
@@ -229,10 +233,12 @@ class _CeldaComoSubdoc:
     customizing o pares clave/valor y genera la imagen tipo SE11."""
 
     def __init__(self, celda):
+        """Envuelve la celda; el primer párrafo de una celda ya existe y se reutiliza."""
         self._celda = celda
         self._primer_parrafo_libre = True
 
     def add_paragraph(self, texto=""):
+        """Escribe en el párrafo vacío inicial de la celda o añade uno nuevo."""
         if self._primer_parrafo_libre:
             self._primer_parrafo_libre = False
             p = self._celda.paragraphs[0]
@@ -242,10 +248,12 @@ class _CeldaComoSubdoc:
         return self._celda.add_paragraph(_limpiar(texto))
 
     def add_picture(self, ruta, width=None):
+        """Inserta una imagen en un párrafo propio de la celda."""
         p = self.add_paragraph()
         return p.add_run().add_picture(ruta, width=width)
 
     def add_table(self, rows, cols):
+        """Crea una tabla anidada dentro de la celda."""
         self._primer_parrafo_libre = False
         return self._celda.add_table(rows, cols)
 
@@ -254,9 +262,11 @@ class _FabricaSubdocCelda:
     """Lo que recibe _construir_tabla_campos_subdoc en lugar del 'doc' de docxtpl."""
 
     def __init__(self, celda):
+        """Celda donde escribirá el subdocumento."""
         self._celda = celda
 
     def new_subdoc(self):
+        """Devuelve el adaptador que escribe en la celda."""
         return _CeldaComoSubdoc(self._celda)
 
 
@@ -264,7 +274,10 @@ class _FabricaSubdocCelda:
 # CONSTRUCTOR DE LAS SECCIONES TÉCNICAS
 # ---------------------------------------------------------------------------
 class _ConstructorTecnico:
+    """Escribe las secciones 5, 6 y 7 al final del AFU, heredando sus estilos."""
     def __init__(self, doc, imagenes_tmp_dir):
+        """Calcula los anchos de tabla con el ancho útil de la página, asegura el
+        estilo 'Table Grid' y detecta si los títulos del AFU se numeran solos."""
         self.doc = doc
         self.tmp = imagenes_tmp_dir
         self.imagenes = []  # PNGs temporales a borrar al terminar
@@ -285,6 +298,7 @@ class _ConstructorTecnico:
 
     # -- títulos ------------------------------------------------------------
     def _titulo_numerado(self, nivel):
+        """True si el estilo 'Heading N' del AFU ya trae numeración automática."""
         try:
             pPr = self.doc.styles[f"Heading {nivel}"].element.pPr
         except KeyError:
@@ -292,6 +306,7 @@ class _ConstructorTecnico:
         return pPr is not None and pPr.numPr is not None
 
     def titulo(self, texto, nivel, salto_pagina=False):
+        """Añade un título de nivel 1 o 2, numerándolo a mano solo si el AFU no lo hace."""
         if nivel == 1:
             self.h1 += 1
             self.h2 = 0
@@ -312,6 +327,7 @@ class _ConstructorTecnico:
         return p
 
     def parrafo(self, texto="", negrita=False, cursiva=False):
+        """Añade un párrafo de texto (opcionalmente en negrita o cursiva)."""
         p = self.doc.add_paragraph()
         if texto:
             r = p.add_run(_limpiar(texto))
@@ -321,6 +337,7 @@ class _ConstructorTecnico:
 
     # -- tablas -------------------------------------------------------------
     def _nueva_tabla(self, filas, anchos):
+        """Crea una tabla con anchos fijos de columna (respetados por Word y LibreOffice)."""
         t = self.doc.add_table(rows=filas, cols=len(anchos))
         t.style = self.doc.styles["Table Grid"]
         t.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -333,6 +350,7 @@ class _ConstructorTecnico:
 
     @staticmethod
     def _sombrear(celda, color_hex):
+        """Pone color de fondo a una celda."""
         tcPr = celda._tc.get_or_add_tcPr()
         for viejo in tcPr.findall(qn("w:shd")):
             tcPr.remove(viejo)
@@ -344,6 +362,7 @@ class _ConstructorTecnico:
 
     @staticmethod
     def _escribir(celda, texto, negrita=False, color=None, size=None, mono=False, keep_next=False):
+        """Escribe texto con formato en el primer párrafo de una celda."""
         p = celda.paragraphs[0]
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.space_before = Pt(2)
@@ -382,6 +401,7 @@ class _ConstructorTecnico:
 
     # -- secciones ----------------------------------------------------------
     def objetos_logica(self, objetos):
+        """Sección 5.1: una tabla por objeto con descripción, explicación y código."""
         if not objetos:
             self.parrafo("No se identificaron objetos con lógica de negocio en esta OT.")
         for o in objetos:
@@ -393,12 +413,16 @@ class _ConstructorTecnico:
             ])
 
     def objetos_diccionario(self, objetos):
+        """Sección 5.2: una tabla por objeto de diccionario con sus campos
+        (como imagen tipo SE11 si hay datos estructurados)."""
         if not objetos:
             self.parrafo("No se identificaron objetos de diccionario en esta OT.")
         for idx, o in enumerate(objetos):
             crudos = o.get("campos_crudos")
 
             def llenar_campos(celda, crudos=crudos, idx=idx, o=o):
+                """Llena la celda 'Campos' con la imagen de campos o, si no hay datos
+                estructurados, con el resumen en texto."""
                 if crudos:
                     prefijo = f"dtss_full_dicc_{os.getpid()}_{idx}"
                     self.imagenes.append(os.path.join(self.tmp, f"{prefijo}.png"))
@@ -412,6 +436,8 @@ class _ConstructorTecnico:
             ])
 
     def configuracion(self, configuracion):
+        """Sección 5.3: cada tabla de customizing como imagen; si Pillow falla,
+        como tabla nativa con las columnas constantes resumidas."""
         if not configuracion:
             self.parrafo("No se identificaron objetos de customizing en esta OT.")
             return
@@ -438,6 +464,7 @@ class _ConstructorTecnico:
             self.doc.add_paragraph()
 
     def ordenes_transporte(self, ordenes):
+        """Sección 6: tabla de órdenes de transporte (orden, usuario, denominación, fecha)."""
         if not ordenes:
             self.parrafo("No se registraron órdenes de transporte.")
             return
@@ -456,6 +483,7 @@ class _ConstructorTecnico:
         self.doc.add_paragraph()
 
     def limpiar_temporales(self):
+        """Borra las imágenes PNG temporales que se generaron para el documento."""
         for ruta in self.imagenes:
             try:
                 if os.path.exists(ruta):

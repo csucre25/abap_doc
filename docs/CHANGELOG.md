@@ -2,6 +2,16 @@
 
 ## 2026-10-15
 
+### Documentación del código y del flujo de ejecución
+- Todas las funciones y clases tienen docstring que explica qué hacen y en
+  qué punto del flujo intervienen; los módulos `bot.py` y `textos.py` tienen
+  descripción de cabecera. Solo se añadió texto, sin cambios de código.
+- Nuevo `README.md`: estructura, instalación, configuración, ejecución, flujo
+  de ejecución paso a paso (arranque, control de acceso, conversación y
+  generación del documento) y los dos registros de auditoría.
+- `tests/test_arquitectura.py` falla si una función o clase nueva no tiene
+  docstring.
+
 ### Estructura del proyecto por capas (`src/sapdoc`)
 - El código pasa a un paquete instalable con cuatro capas:
   - `domain/`: entidades y reglas puras (clasificación de objetos, catálogo de

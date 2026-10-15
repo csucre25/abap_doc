@@ -15,11 +15,13 @@ class ClienteOpenAI:
     proveedor ('extra_body'), para que el núcleo no dependa de ninguno."""
 
     def __init__(self, cliente, extra_body: dict | None = None):
+        """Recibe el cliente del SDK ya configurado y los parámetros propios del proveedor."""
         self._cliente = cliente
         self._extra_body = extra_body or None
 
     async def completar(self, modelo: str, system: str, user: str,
                         temperature: float, max_tokens: int) -> RespuestaIA:
+        """Envía un prompt de sistema y uno de usuario y devuelve el texto y el motivo de fin."""
         respuesta = await self._cliente.chat.completions.create(
             model=modelo,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -31,6 +33,8 @@ class ClienteOpenAI:
 
 
 def crear_cliente_ia(config: Config) -> ClienteOpenAI:
+    """Construye el cliente según LLM_PROVIDER: Azure OpenAI usa su propio cliente;
+    NVIDIA y los servicios compatibles con OpenAI usan el estándar."""
     if config.llm_provider == "azure_openai":
         # En Azure el "modelo" de cada fase es el nombre del despliegue.
         cliente = AsyncAzureOpenAI(
