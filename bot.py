@@ -7,10 +7,11 @@ import asyncio
 import random
 from contextlib import asynccontextmanager
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ChatType
 from telegram.error import BadRequest, NetworkError
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
-    filters, ContextTypes, ConversationHandler
+    Application, ApplicationHandlerStop, CommandHandler, MessageHandler, CallbackQueryHandler,
+    TypeHandler, filters, ContextTypes, ConversationHandler
 )
 from config import Config, ConfigError, cargar_config
 from ia import ClienteIA, crear_cliente_ia
@@ -346,13 +347,34 @@ async def manejar_error(update: object, context: ContextTypes.DEFAULT_TYPE):
         return
     logger.error("Error no controlado en el bot", exc_info=error)
 
-def main():
-    try:
-        config = cargar_config()
-    except ConfigError as e:
-        logger.error(e)
-        return
+async def control_acceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Primer filtro de cada update: solo chats privados de usuarios en
+    TELEGRAM_USUARIOS_PERMITIDOS. Lo que no pasa se registra y se corta aquí,
+    antes de que ningún handler descargue archivos o llame a la IA."""
+    usuario = update.effective_user
+    chat = update.effective_chat
+    uid = usuario.id if usuario else None
 
+    if chat is not None and chat.type != ChatType.PRIVATE:
+        logger.warning(f"Acceso denegado: chat {chat.type} {chat.id} (usuario {uid}). El bot abandona el chat.")
+        try:
+            await chat.leave()
+        except Exception as e:
+            logger.warning(f"No se pudo abandonar el chat {chat.id}: {e}")
+        raise ApplicationHandlerStop
+
+    if uid is None or uid not in obtener_config(context).telegram_usuarios_permitidos:
+        nombre = f"@{usuario.username}" if usuario and usuario.username else "sin alias"
+        logger.warning(f"Acceso denegado: usuario {uid} ({nombre}).")
+        if uid is not None:
+            mensaje = TEXTS[LANG]["msg_no_autorizado"].format(user_id=uid)
+            if update.callback_query:
+                await update.callback_query.answer(mensaje, show_alert=True)
+            elif update.effective_message:
+                await update.effective_message.reply_text(mensaje)
+        raise ApplicationHandlerStop
+
+def construir_app(config: Config) -> Application:
     app = (
         Application.builder()
         .token(config.telegram_token)
@@ -363,6 +385,9 @@ def main():
 
     app.bot_data['config'] = config
     app.bot_data['cliente_ia'] = crear_cliente_ia(config)
+
+    # Grupo -1: corre antes que cualquier otro handler y puede cortar el update.
+    app.add_handler(TypeHandler(Update, control_acceso), group=-1)
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start_command)],
@@ -387,7 +412,23 @@ def main():
     app.add_error_handler(manejar_error)
     # MANEJADOR GLOBAL POR SI HABLAN FUERA DE UNA CONVERSACIÓN
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unexpected_input))
+    return app
 
+def main():
+    try:
+        config = cargar_config()
+    except ConfigError as e:
+        logger.error(e)
+        return
+
+    app = construir_app(config)
+    if config.telegram_usuarios_permitidos:
+        logger.info(f"Usuarios autorizados: {len(config.telegram_usuarios_permitidos)}.")
+    else:
+        logger.warning(
+            "TELEGRAM_USUARIOS_PERMITIDOS está vacía: nadie puede usar el bot. Escríbele desde Telegram "
+            "para ver tu ID y agrégalo en el .env."
+        )
     logger.info(TEXTS[LANG]["log_bot_listening"])
     app.run_polling()
 

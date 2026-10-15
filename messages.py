@@ -57,6 +57,10 @@ TEXTS = {
         "msg_draw_doc": "📄 Documento Técnico (Word) generado con la plantilla DTSS.",
         "msg_json_backup": "🗂️ JSON de respaldo (estructura completa para auditoría o reproceso manual).",
         "msg_csv_config": "📊 CSV de customizing (datos completos sin compactar, para validar o recargar la configuración).",
+        "msg_no_autorizado": (
+            "⛔ No estás autorizado para usar este bot.\n"
+            "Tu ID de Telegram es {user_id}. Compártelo con el administrador si necesitas acceso."
+        ),
         "aviso_calib_sin_texto": (
             "No se pudo usar el documento de calibración: no contiene texto extraíble "
             "(¿es un PDF escaneado?). Se aplicó el estilo por defecto."

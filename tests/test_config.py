@@ -93,6 +93,14 @@ def test_azure_exige_version_de_api():
     assert cargar_config(env(**base, LLM_API_VERSION="2024-10-21")).llm_api_version == "2024-10-21"
 
 
+def test_usuarios_permitidos():
+    assert cargar_config(env()).telegram_usuarios_permitidos == frozenset()
+    assert cargar_config(env(TELEGRAM_USUARIOS_PERMITIDOS=" 123, 456 ,,")).telegram_usuarios_permitidos == {123, 456}
+    with pytest.raises(ConfigError) as error:
+        cargar_config(env(TELEGRAM_USUARIOS_PERMITIDOS="123, @alguien"))
+    assert "@alguien" in str(error.value)
+
+
 def test_reporta_todos_los_problemas_juntos():
     with pytest.raises(ConfigError) as error:
         cargar_config({"PLANTILLA_DTSS_PATH": "no_existe.docx"})

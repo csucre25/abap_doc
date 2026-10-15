@@ -2,6 +2,18 @@
 
 ## 2026-10-14
 
+### Lista blanca de usuarios y solo chats privados
+- Nueva variable `TELEGRAM_USUARIOS_PERMITIDOS` (IDs numéricos separados por
+  comas). Un control previo a todos los handlers corta cualquier mensaje o
+  botón de un usuario que no esté en la lista, antes de descargar archivos o
+  llamar a la IA, y lo registra en consola.
+- Al usuario no autorizado se le responde con su ID, para que pueda pedir
+  acceso. Si la lista está vacía nadie puede usar el bot (falla cerrado) y se
+  avisa al arrancar.
+- Si añaden el bot a un grupo, supergrupo o canal, lo abandona.
+- `main()` separa la construcción de la aplicación en `construir_app()`.
+- Tests `tests/test_bot_acceso.py` y nuevo caso en `tests/test_config.py`.
+
 ### Se elimina la extracción de constantes por IA
 - La fase 4 ya no pide a la IA una lista de constantes de código. Con
   `gpt-4o` se detectó que inventaba constantes inexistentes (llegó a copiar

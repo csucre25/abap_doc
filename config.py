@@ -49,6 +49,8 @@ class Modelos:
 class Config:
     # repr=False: los secretos no deben aparecer si el objeto termina en un log.
     telegram_token: str = field(repr=False)
+    # IDs numéricos de Telegram autorizados. Vacío = nadie puede usar el bot.
+    telegram_usuarios_permitidos: frozenset
     llm_api_key: str = field(repr=False)
     llm_provider: str
     llm_base_url: str
@@ -76,6 +78,20 @@ def cargar_config(env=None) -> Config:
     telegram_token = _valor(env, "TELEGRAM_BOT_TOKEN")
     if not telegram_token:
         problemas.append("Falta TELEGRAM_BOT_TOKEN.")
+
+    # Se admite vacío a propósito: el bot arranca sin autorizar a nadie y le
+    # dice a quien escriba su ID, que es como se obtiene para agregarlo aquí.
+    telegram_usuarios_permitidos = set()
+    for item in (_valor(env, "TELEGRAM_USUARIOS_PERMITIDOS") or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if item.lstrip("-").isdigit():
+            telegram_usuarios_permitidos.add(int(item))
+        else:
+            problemas.append(
+                f"TELEGRAM_USUARIOS_PERMITIDOS solo admite IDs numéricos separados por comas ({item!r} no lo es)."
+            )
 
     # NVIDIA_API_KEY es el nombre histórico; LLM_API_KEY tiene prioridad.
     llm_api_key = _valor(env, "LLM_API_KEY") or _valor(env, "NVIDIA_API_KEY")
@@ -137,6 +153,7 @@ def cargar_config(env=None) -> Config:
 
     return Config(
         telegram_token=telegram_token,
+        telegram_usuarios_permitidos=frozenset(telegram_usuarios_permitidos),
         llm_api_key=llm_api_key,
         llm_provider=llm_provider,
         llm_base_url=llm_base_url,
