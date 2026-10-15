@@ -176,10 +176,12 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia: ClienteIA, mod
         objetos_sin_analisis = []
         for f2_result, obj_unico in zip(resultados[2:], batch_obj_unicos):
             lote_array = parsear_json_lote(f2_result)
-            if lote_array is None:
-                # Lote ilegible incluso tras reintentos y reparación. Antes el objeto
-                # DESAPARECÍA del documento (dtss_final se arma desde este listado).
-                # Ahora queda con su código y sin descripción de IA, y se avisa en el log.
+            if not lote_array:
+                # Lote ilegible o vacío: JSON inválido incluso tras reparación, la
+                # IA respondió "[]" o se agotaron los reintentos (task_phase_2
+                # devuelve "[]"). Antes el objeto DESAPARECÍA del documento
+                # (dtss_final se arma desde este listado). Ahora queda con su
+                # código y sin descripción de IA, y se avisa en el log.
                 logger.warning(f"Error parseando lote ABAP: {clean_json_response(f2_result or '')[:50]}...")
                 if obj_unico is None:
                     continue

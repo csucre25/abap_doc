@@ -236,6 +236,46 @@ def test_ejecutar_pipeline_no_levanta_si_falla_la_ia(tmp_path):
     assert "RuntimeError: servicio caído" in auditoria.texto()
 
 
+class ClienteFase2Vacia(ClienteIAFalso):
+    """La Fase 2 responde una lista vacía para ZR_DEMO; el resto, como el falso normal."""
+
+    async def completar(self, modelo, system, user, temperature, max_tokens):
+        if system == TEXTS["es"]["sys_prompt_fase2"] and '"ZR_DEMO"' in user:
+            self.llamadas.append(modelo)
+            return RespuestaIA(contenido="[]", finish_reason="stop")
+        return await super().completar(modelo, system, user, temperature, max_tokens)
+
+
+class ClienteFase2Caida(ClienteIAFalso):
+    """La Fase 2 falla siempre para ZR_DEMO (se agotan los reintentos)."""
+
+    async def completar(self, modelo, system, user, temperature, max_tokens):
+        if system == TEXTS["es"]["sys_prompt_fase2"] and '"ZR_DEMO"' in user:
+            self.llamadas.append(modelo)
+            raise RuntimeError("servicio caído")
+        return await super().completar(modelo, system, user, temperature, max_tokens)
+
+
+@pytest.mark.parametrize("cliente", [ClienteFase2Vacia(), ClienteFase2Caida()], ids=["lista_vacia", "reintentos_agotados"])
+def test_objeto_sin_analisis_de_fase2_sigue_en_el_documento(cliente, tmp_path, monkeypatch):
+    # Antes, "[]" (respuesta vacía o reintentos agotados) hacía desaparecer el objeto del DTSS.
+    async def sin_espera(_segundos):
+        pass
+    monkeypatch.setattr("sapdoc.application.documentar_ot.asyncio.sleep", sin_espera)
+
+    auditoria = RegistroAuditoria()
+    resultado = asyncio.run(ejecutar_pipeline(
+        EntradaPipeline(metadata_json=METADATA, abap_dict={os.path.basename(k): v for k, v in ABAP.items()}),
+        cliente, MODELOS, auditoria, GENERADOR, dir_salida=str(tmp_path),
+    ))
+
+    logica = {o["nombre"]: o for o in json.loads(resultado.borrador_json)["objetos_logica"]}
+    assert set(logica) == {"ZR_DEMO", "ZCL_DEMO=> M_CALC"}
+    assert logica["ZR_DEMO"]["tipo"] == "PROG"
+    assert logica["ZR_DEMO"]["codigo"]["nuevo"] == ABAP["src/zr_demo.abap"]
+    assert "sin análisis de IA por JSON inválido tras reintentos: ZR_DEMO" in auditoria.texto()
+
+
 def test_revisar_codigo_devuelve_hallazgos_y_los_audita():
     cliente = ClienteIAFalso('```json\n{"has_violations": true, "findings": [{"description": "SELECT *"}]}\n```')
     auditoria = RegistroAuditoria()

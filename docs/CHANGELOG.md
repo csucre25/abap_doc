@@ -2,6 +2,15 @@
 
 ## 2026-10-15
 
+### Un objeto sin análisis de Fase 2 ya no desaparece del DTSS
+- Si la IA respondía `[]` o se agotaban los reintentos (`task_phase_2`
+  devuelve `"[]"`), la lista vacía no entraba al camino de rescate y el objeto
+  quedaba fuera del documento sin aviso. Ahora se trata igual que un JSON
+  ilegible: el objeto aparece con su código real, sin descripción de IA, y el
+  registro de prompts lo lista como "sin análisis de IA".
+- Test en `tests/test_pipeline.py` para ambos casos (lista vacía y reintentos
+  agotados).
+
 ### env.example con un bloque completo por proveedor de IA
 - Variables comunes (canal, auditoría, documento) separadas de las del
   proveedor de IA.
