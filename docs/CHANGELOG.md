@@ -2,6 +2,18 @@
 
 ## 2026-10-15
 
+### env.example con un bloque completo por proveedor de IA
+- Variables comunes (canal, auditoría, documento) separadas de las del
+  proveedor de IA.
+- Un bloque autocontenido por proveedor (NVIDIA, OpenAI directo, Azure
+  OpenAI) con todas sus variables, incluidos los modelos por fase, para
+  cambiar de proveedor comentando un bloque y descomentando otro.
+- Las explicaciones dentro de los bloques usan `##`, de modo que comentar o
+  descomentar el bloque entero con Ctrl+/ no las convierte en variables.
+- Test `tests/test_env_example.py`: cada bloque activado solo da una
+  configuración válida, el ejemplo se versiona con un único bloque activo y
+  no hay variables de IA fuera de los bloques.
+
 ### CLAUDE.md actualizado
 - Refleja el proyecto actual (python-telegram-bot, capas en `src/sapdoc`,
   proveedores de IA) en lugar de aiogram y el panel web, y recoge comandos,
