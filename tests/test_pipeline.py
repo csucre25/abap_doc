@@ -105,6 +105,17 @@ def test_leer_zip_ot_sin_metadata_falla(tmp_path):
         leer_zip_ot(ruta)
 
 
+def test_leer_zip_ot_conserva_el_codigo_que_no_es_utf8(tmp_path):
+    # Antes el segundo read() del stream ya consumido devolvía b"" y el fuente quedaba vacío.
+    codigo = "REPORT zr_año.\n* Descripción con tildes\n"
+    ruta = tmp_path / "latin1.zip"
+    with zipfile.ZipFile(ruta, "w") as z:
+        z.writestr("metadata.json", json.dumps(METADATA))
+        z.writestr("src/zr_ano.abap", codigo.encode("latin-1"))
+    _, abap_dict = leer_zip_ot(ruta)
+    assert abap_dict["zr_ano.abap"] == codigo
+
+
 def test_clasificacion_solo_manda_a_ia_los_objetos_con_logica():
     ruido, diccionario, logica = clasificar_objetos_previos(METADATA)
     assert [o["object_name"] for o in logica] == ["ZR_DEMO", "ZCL_DEMO=> M_CALC"]

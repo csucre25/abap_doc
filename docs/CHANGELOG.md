@@ -2,6 +2,12 @@
 
 ## 2026-10-15
 
+### Los fuentes ABAP que no son UTF-8 ya no llegan vacíos
+- `leer_zip_ot` volvía a leer el stream ya consumido al fallar la decodificación
+  UTF-8, así que todo fuente en latin-1 quedaba como texto vacío (sin código en
+  la IA ni en el Word). Ahora lee los bytes una vez y los decodifica.
+- Test en `tests/test_pipeline.py` con un fuente en latin-1.
+
 ### Un objeto sin análisis de Fase 2 ya no desaparece del DTSS
 - Si la IA respondía `[]` o se agotaban los reintentos (`task_phase_2`
   devuelve `"[]"`), la lista vacía no entraba al camino de rescate y el objeto

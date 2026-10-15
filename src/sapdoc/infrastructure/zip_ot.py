@@ -21,11 +21,12 @@ def leer_zip_ot(zip_path):
 
         for file_name in zip_ref.namelist():
             if file_name.endswith('.abap'):
-                with zip_ref.open(file_name) as abap_file:
-                    try:
-                        content = abap_file.read().decode('utf-8')
-                    except UnicodeDecodeError:
-                        content = abap_file.read().decode('latin-1')
-                    abap_files_dict[os.path.basename(file_name)] = content
+                # Se lee una sola vez: un segundo read() del mismo stream devuelve b"".
+                datos = zip_ref.read(file_name)
+                try:
+                    content = datos.decode('utf-8')
+                except UnicodeDecodeError:
+                    content = datos.decode('latin-1')
+                abap_files_dict[os.path.basename(file_name)] = content
 
     return metadata_content, abap_files_dict
