@@ -16,15 +16,19 @@ from telegram.ext import (
     Application, ApplicationHandlerStop, CommandHandler, MessageHandler, CallbackQueryHandler,
     TypeHandler, filters, ContextTypes, ConversationHandler
 )
-from bitacora import Bitacora, huella_archivo, sha256_archivo, sha256_bytes
-from config import Config, ConfigError, cargar_config
-from ia import ClienteIA, crear_cliente_ia
-from document_parser import extract_text_from_file
-from messages import TEXTS
-from pipeline import (
-    EntradaPipeline, RegistroAuditoria, ZipSinMetadataError,
-    ejecutar_pipeline, revisar_codigo, leer_zip_ot, get_file_timestamp,
-)
+from sapdoc.application.auditoria_ejecucion import RegistroAuditoria
+from sapdoc.application.documentar_ot import ejecutar_pipeline
+from sapdoc.application.marcas_tiempo import get_file_timestamp
+from sapdoc.application.puertos import ClienteIA
+from sapdoc.application.revision_codigo import revisar_codigo
+from sapdoc.application.textos import TEXTS
+from sapdoc.domain.entidades import EntradaPipeline
+from sapdoc.infrastructure.bitacora import Bitacora, huella_archivo, sha256_archivo, sha256_bytes
+from sapdoc.infrastructure.config import Config, ConfigError, cargar_config
+from sapdoc.infrastructure.ia import crear_cliente_ia
+from sapdoc.infrastructure.lectura_documentos import extract_text_from_file
+from sapdoc.infrastructure.word import GeneradorWord
+from sapdoc.infrastructure.zip_ot import ZipSinMetadataError, leer_zip_ot
 
 # ==========================================
 # LOGGING (la configuración se carga y valida en main(), ver config.py)
@@ -314,8 +318,8 @@ async def execute_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
             incluir_funcional=context.user_data.get('incluir_funcional', False),
         )
         resultado = await ejecutar_pipeline(
-            entrada, obtener_cliente_ia(context), config.modelos, auditoria,
-            progreso=progreso_en(status_msg), plantilla_path=config.plantilla_path,
+            entrada, obtener_cliente_ia(context), config.modelos, auditoria, context.bot_data['generador'],
+            progreso=progreso_en(status_msg),
         )
         await status_msg.edit_text(
             componer_mensaje_final(resultado), parse_mode='HTML' if resultado.mensaje_html else None
@@ -473,6 +477,7 @@ def construir_app(config: Config) -> Application:
     app.bot_data['config'] = config
     app.bot_data['cliente_ia'] = crear_cliente_ia(config)
     app.bot_data['bitacora'] = Bitacora(config.auditoria_path)
+    app.bot_data['generador'] = GeneradorWord(config.plantilla_path)
 
     # Grupo -1: corre antes que cualquier otro handler y puede cortar el update.
     app.add_handler(TypeHandler(Update, control_acceso), group=-1)

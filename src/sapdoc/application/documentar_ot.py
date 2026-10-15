@@ -1,226 +1,38 @@
-# pipeline.py
-#
-# Núcleo de la aplicación: lee la OT, orquesta las fases de IA y arma el
-# documento. NO conoce el canal por el que llegan los archivos (Telegram hoy,
-# otro mañana): recibe una EntradaPipeline y devuelve un ResultadoPipeline.
-# El canal (bot.py) se encarga de descargar, mostrar progreso y enviar archivos.
+"""Caso de uso principal: documentar una orden de transporte.
 
-import os
-import json
-import zipfile
-import logging
-import tempfile
+Recibe una EntradaPipeline (lo que el usuario subió, ya leído), orquesta las
+fases de IA y arma el Word mediante el generador inyectado. No conoce el canal
+(Telegram, Teams...) ni el proveedor de IA concreto."""
+
 import asyncio
-import re
-import traceback
 import functools
-import difflib
+import json
+import logging
+import os
+import tempfile
+import traceback
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from datetime import datetime
 
-from config import Modelos
-from document_parser import analyze_functional_text, analyze_calibration_text, clean_json_response
-from messages import TEXTS
-from sap_technical_tables import is_technical_noise
-from document_builder import (
-    construir_contexto, renderizar_documento, DocxBuildError, exportar_csv_configuracion, PLANTILLA_PATH,
+from sapdoc.application.analisis_documentos import analyze_calibration_text, analyze_functional_text
+from sapdoc.application.auditoria_ejecucion import RegistroAuditoria
+from sapdoc.application.marcas_tiempo import get_file_timestamp
+from sapdoc.application.puertos import ClienteIA, DocxBuildError, GeneradorDocumento
+from sapdoc.application.textos import TEXTS
+from sapdoc.domain.clasificacion import (
+    clasificar_objetos_previos, obtener_codigo_objeto, objeto_diccionario_desde_metadata,
+    objeto_ruido_desde_metadata,
 )
-from document_builder_afu import renderizar_documento_con_afu
+from sapdoc.domain.entidades import EntradaPipeline, Modelos, ResultadoPipeline
+from sapdoc.domain.respuestas_ia import clean_json_response, parsear_json_lote
 
 LANG = "es"
 logger = logging.getLogger(__name__)
-
-# Solo estos tipos tienen lógica propia (escrita por un desarrollador) y
-# ameritan pasar por Fase 2 (análisis IA) y Fase 4 (redacción IA).
-# TABL/DTEL/DOMA/VIEW/SHLP/TRAN/TABU (customizing real) se documentan tal
-# cual desde metadata.json, sin gastar tokens de IA en ellos.
-# PROG/CLAS se mantienen por compatibilidad con OTs extraídas con el
-# esquema viejo; REPS (includes de programa) y CLAS_SECTION (secciones
-# PUBLIC/PROTECTED/PRIVATE de una clase) son los tipos del esquema nuevo
-# del extractor, donde una clase ya no es un solo objeto CLAS sino que se
-# descompone en sus secciones + un objeto METH por cada método.
-LOGIC_TYPES = ["PROG", "CLAS", "CLAS_SECTION", "FUNC", "ENHO", "METH", "REPS"]
-
-
-# ==========================================
-# CONTRATO ENTRE EL CANAL Y EL NÚCLEO
-# ==========================================
-@dataclass
-class EntradaPipeline:
-    metadata_json: dict
-    abap_dict: dict
-    calib_raw_text: str | None = None
-    afu_raw_text: str | None = None
-    afu_docx_bytes: bytes | None = None
-    incluir_funcional: bool = False
-
-
-@dataclass
-class ResultadoPipeline:
-    mensaje: str = ""
-    mensaje_html: bool = True
-    docx_path: str | None = None
-    csvs_configuracion: list = field(default_factory=list)
-    borrador_json: str | None = None
-    afu_json: dict = field(default_factory=dict)
-    # Cosas que el usuario debe saber aunque el documento se haya generado
-    # (texto plano, sin formato): el canal las muestra junto al mensaje final.
-    avisos: list = field(default_factory=list)
-
-
-class RegistroAuditoria:
-    """Acumula, fase por fase, el prompt enviado y la respuesta del LLM."""
-
-    def __init__(self):
-        self._entradas = []
-
-    def agregar(self, phase: str, prompt: str, response: str):
-        timestamp = get_current_timestamp()
-        self._entradas.append(
-            f"\n\n{'='*50}\n[{phase}] - {timestamp}\n{'='*50}\n"
-            f"--- PROMPT ENVIADO ---\n{prompt}\n\n"
-            f"--- RESPUESTA DEL LLM ---\n{response}\n"
-        )
-
-    def texto(self) -> str:
-        return "".join(self._entradas) or "Sin logs registrados."
-
-
-class ZipSinMetadataError(Exception):
-    """El ZIP de la OT no trae metadata.json en la raíz."""
 
 
 @asynccontextmanager
 async def _sin_progreso(texto_base):
     yield
 
-
-# ==========================================
-# UTILIDADES Y HELPER FUNCTIONS
-# ==========================================
-def get_current_timestamp():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-def get_file_timestamp():
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-def leer_zip_ot(zip_path):
-    """Devuelve (metadata_json, abap_dict) de un ZIP de OT. abap_dict va
-    indexado por nombre de archivo sin carpeta."""
-    abap_files_dict = {}
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        if 'metadata.json' not in zip_ref.namelist():
-            raise ZipSinMetadataError()
-        with zip_ref.open('metadata.json') as meta_file:
-            metadata_content = json.load(meta_file)
-
-        for file_name in zip_ref.namelist():
-            if file_name.endswith('.abap'):
-                with zip_ref.open(file_name) as abap_file:
-                    try:
-                        content = abap_file.read().decode('utf-8')
-                    except UnicodeDecodeError:
-                        content = abap_file.read().decode('latin-1')
-                    abap_files_dict[os.path.basename(file_name)] = content
-
-    return metadata_content, abap_files_dict
-
-def obtener_codigo_objeto(obj_meta, abap_dict):
-    """Devuelve el código a mostrar para un objeto con lógica:
-    - Objeto NUEVO (sin 'previous'): el código completo tal cual.
-    - Sin cambios reales (previous == active): un aviso breve.
-    - Objeto MODIFICADO: DOS secciones claramente separadas y etiquetadas
-      — 'CÓDIGO NUEVO' primero (líneas agregadas/modificadas), 'CÓDIGO
-      ANTERIOR' después (líneas eliminadas/reemplazadas) — nunca mezcladas
-      en un solo bloque de diff con +/- intercalados, para evitar
-      confusión visual sobre qué es lo vigente y qué ya no aplica.
-    Nunca se le pide a la IA que retipee el código — se toma directo del
-    fuente real para evitar errores de transcripción y ahorrar tokens."""
-    files = (obj_meta or {}).get("files", {}) or {}
-    active_name = files.get("active")
-    previous_name = files.get("previous")
-    activo = abap_dict.get(active_name, "") if active_name else ""
-    previo = abap_dict.get(previous_name, "") if previous_name else ""
-
-    if not activo:
-        return {"nuevo": "N/A", "anterior": "N/A"}
-    if not previo:
-        return {"nuevo": activo, "anterior": "N/A"}
-    if previo == activo:
-        return {"nuevo": "Sin cambios de código respecto a la versión anterior.", "anterior": "N/A"}
-
-    diff_lines = list(difflib.unified_diff(previo.splitlines(), activo.splitlines(), lineterm=""))
-    lineas_nuevas = [l[1:] for l in diff_lines if l.startswith("+") and not l.startswith("+++")]
-    lineas_anteriores = [l[1:] for l in diff_lines if l.startswith("-") and not l.startswith("---")]
-
-    nuevo_str = "\n".join(lineas_nuevas) if lineas_nuevas else "Sin adiciones."
-    anterior_str = "\n".join(lineas_anteriores) if lineas_anteriores else "Sin eliminaciones."
-    return {"nuevo": nuevo_str, "anterior": anterior_str}
-
-def clasificar_objetos_previos(metadata_json):
-    """
-    Pre-filtra los objetos ANTES de gastar tokens de IA (Fase 2), en vez de
-    mandar todo el ZIP a la IA y descartar después:
-      - ruido: objetos técnicos autogenerados por SAP (TABU tipo TDDAT/TVDIR,
-        FUNC/PROG tipo VIEWFRAME_*/SAPL*, o un FUGR contenedor sin código
-        propio). Se documentan directo desde metadata, sin IA.
-      - diccionario: objetos simples de SAP (tablas, elementos de datos,
-        dominios, vistas, ayudas de búsqueda, transacciones, customizing
-        real como ZTCONSTANTES). Se documentan tal cual desde metadata, sin IA.
-      - logica: objetos con lógica propia (PROG/CLAS/FUNC/ENHO/METH). Solo
-        estos se mandan a Fase 2 para análisis técnico con IA.
-    """
-    ruido, diccionario, logica = [], [], []
-    for obj in metadata_json.get("objects", []):
-        obj_type = obj.get("object_type", "")
-        obj_name = obj.get("object_name", "")
-        tiene_codigo = bool(obj.get("files", {}).get("active"))
-
-        if is_technical_noise(obj_type, obj_name) or (obj_type == "FUGR" and not tiene_codigo):
-            ruido.append(obj)
-        elif obj_type in LOGIC_TYPES:
-            logica.append(obj)
-        else:
-            diccionario.append(obj)
-
-    return ruido, diccionario, logica
-
-def objeto_diccionario_desde_metadata(obj):
-    """Arma la entrada de 'objetos_diccionario' directo desde metadata.json,
-    sin ninguna llamada a IA."""
-    attrs = obj.get("attributes", []) or []
-    attrs_dict = {a.get("key"): a.get("value") for a in attrs if a.get("key")}
-    # "Descripción" (DTEL/TABL/VIEW) o "Texto Breve" (TRAN) son mucho más
-    # útiles que el short_text genérico que a veces manda el extractor
-    # (ej. "Objeto del Dictionary (DDIC)", "Código de Transacción").
-    descripcion = (
-        attrs_dict.get("Descripción")
-        or attrs_dict.get("Texto Breve")
-        or obj.get("short_text")
-        or "Objeto de diccionario SAP."
-    )
-
-    customizing = obj.get("customizing")
-    if customizing and customizing.get("rows"):
-        columnas = customizing.get("columns", [])
-        campos = [dict(zip(columnas, fila)) for fila in customizing.get("rows", [])]
-    else:
-        campos = obj.get("fields") or attrs
-
-    return {
-        "nombre": obj.get("object_name", ""),
-        "tipo": obj.get("object_type", ""),
-        "descripcion_tecnica": descripcion,
-        "campos": campos,
-    }
-
-def objeto_ruido_desde_metadata(obj):
-    return {
-        "nombre": obj.get("object_name", ""),
-        "tipo": obj.get("object_type", ""),
-        "motivo": "Generado automáticamente por SAP, sin lógica propia."
-    }
 
 def create_processing_batches(objects, system_info, abap_dict, max_chars_per_batch=15000):
     """Arma lotes SOLO con los objetos que ya se decidió mandar a Fase 2
@@ -256,52 +68,7 @@ def create_processing_batches(objects, system_info, abap_dict, max_chars_per_bat
 
     return batches
 
-# La IA a veces repite la clave dentro del valor: "object_name": "object_name": "ZOBJ"
-# (JSON inválido). Es un defecto de generación, no de contenido: se puede reparar sin perder datos.
-_RE_CLAVE_DUPLICADA = re.compile(r'("(\w+)"\s*:\s*)"\2"\s*:\s*')
-_RE_COMA_FINAL = re.compile(r',\s*([}\]])')
 
-def parsear_json_lote(texto_crudo):
-    """Devuelve la lista del lote de Fase 2, o None si no se puede leer ni reparando
-    los defectos conocidos (clave repetida, coma antes de } o ])."""
-    limpio = clean_json_response(texto_crudo or "")
-    reparado = _RE_COMA_FINAL.sub(r'\1', _RE_CLAVE_DUPLICADA.sub(r'\1', limpio))
-    for candidato in (limpio, reparado):
-        try:
-            data = json.loads(candidato)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(data, list):
-            return data
-    return None
-
-
-# ==========================================
-# CODE REVIEW (OPCIONAL)
-# ==========================================
-async def revisar_codigo(cliente_ia, modelo, metadata_str, abap_code_str, auditoria: RegistroAuditoria):
-    """Fase 1.5: devuelve el dict del Code Review ({'has_violations': ..., 'findings': [...]})."""
-    sys_prompt = TEXTS[LANG]["sys_prompt_fase1_5"]
-    usr_prompt = TEXTS[LANG]["user_prompt_fase1_5"].format(metadata_json=metadata_str, codigo_abap=abap_code_str)
-
-    response_fase1_5 = await cliente_ia.completar(
-        modelo, sys_prompt, usr_prompt, temperature=0.1, max_tokens=1500,
-    )
-
-    review_txt = clean_json_response(response_fase1_5.contenido.strip())
-    auditoria.agregar("FASE 1.5 - CODE REVIEW", sys_prompt, review_txt)
-
-    try:
-        return json.loads(review_txt.strip())
-    except json.JSONDecodeError:
-        logger.warning("Fallo al parsear JSON del Code Review. Ignorando validaciones.")
-        # "ilegible" no cambia el flujo (sigue sin bloquear), pero deja constancia en la bitácora.
-        return {"has_violations": False, "ilegible": True}
-
-
-# ==========================================
-# FUNCIONES ASÍNCRONAS DEL PIPELINE IA
-# ==========================================
 async def task_phase_0(raw_text, cliente_ia, modelo):
     if not (raw_text or "").strip(): return {}
     return await analyze_calibration_text(raw_text, cliente_ia, modelo)
@@ -337,9 +104,10 @@ async def task_phase_2(meta_str, abap_str, semaforo, delay_offset, cliente_ia, m
                     return "[]"
                 await asyncio.sleep(base_delay * (2 ** attempt))
 
-async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Modelos,
-                            auditoria: RegistroAuditoria, progreso=_sin_progreso,
-                            dir_salida: str = None, plantilla_path: str = None) -> ResultadoPipeline:
+
+async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia: ClienteIA, modelos: Modelos,
+                            auditoria: RegistroAuditoria, generador: GeneradorDocumento,
+                            progreso=_sin_progreso, dir_salida: str = None) -> ResultadoPipeline:
     """Corre las fases 0, 1, 2 y 4 y arma el Word. Nunca levanta excepción:
     cualquier falla queda descrita en resultado.mensaje, con lo que se haya
     alcanzado a generar (el registro de auditoría siempre queda en 'auditoria').
@@ -554,7 +322,7 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
         # ---------------------------------------------------------
         incluir_funcional = entrada.incluir_funcional
         tr_info = metadata_json.get('transport_request', {})
-        contexto_docx = construir_contexto(
+        contexto_docx = generador.construir_contexto(
             dtss_final,
             metadata_json,
             cliente=tr_info.get('author', 'Cliente'),
@@ -567,7 +335,7 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
         auditoria.agregar(
             "FASE 5 - ARMADO DOCX (CONTEXTO ENVIADO A LA PLANTILLA)",
             ("base=AFU original + secciones técnicas (requisitos funcionales incluidos)" if incluir_funcional
-             else f"plantilla={plantilla_path or PLANTILLA_PATH}"),
+             else f"plantilla={generador.plantilla_path}"),
             json.dumps(contexto_docx, indent=2, ensure_ascii=False)[:8000]
         )
         try:
@@ -580,14 +348,13 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
                         f_afu.write(entrada.afu_docx_bytes)
                     loop = asyncio.get_running_loop()
                     await loop.run_in_executor(None, functools.partial(
-                        renderizar_documento_con_afu, contexto_docx, afu_base_path, docx_path, dir_salida
+                        generador.renderizar_con_afu, contexto_docx, afu_base_path, docx_path, dir_salida
                     ))
                 finally:
                     if os.path.exists(afu_base_path):
                         os.remove(afu_base_path)
             else:
-                renderizar_documento(contexto_docx, docx_path, plantilla_path=plantilla_path,
-                                     imagenes_tmp_dir=dir_salida)
+                generador.renderizar(contexto_docx, docx_path, dir_salida)
             resultado.docx_path = docx_path
 
             # CSV crudo (sin compactar columnas) por cada objeto de customizing,
@@ -595,7 +362,7 @@ async def ejecutar_pipeline(entrada: EntradaPipeline, cliente_ia, modelos: Model
             # exacta que se usó — la imagen del Word es para lectura humana,
             # el CSV es la fuente de verdad reprocesable.
             resultado.csvs_configuracion = [
-                exportar_csv_configuracion(cfg, dir_salida)
+                generador.exportar_csv(cfg, dir_salida)
                 for cfg in dtss_final.get("configuracion", [])
             ]
             resultado.mensaje = (

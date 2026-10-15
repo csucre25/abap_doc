@@ -10,11 +10,11 @@ from telegram import Update
 from telegram.constants import ChatType
 from telegram.ext import ApplicationHandlerStop, TypeHandler
 
-import bot
-from bitacora import Bitacora
-from config import cargar_config
+from sapdoc.infrastructure.bitacora import Bitacora
+from sapdoc.infrastructure.config import cargar_config
+from sapdoc.interfaces.telegram import bot
 
-PLANTILLA = str(Path(__file__).resolve().parent.parent / "plantilla_dtss.docx")
+PLANTILLA = str(Path(__file__).resolve().parent.parent / "plantillas" / "plantilla_dtss.docx")
 AUTORIZADO, EXTRANO = 111, 999
 
 

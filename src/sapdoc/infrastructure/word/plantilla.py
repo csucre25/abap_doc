@@ -1,4 +1,4 @@
-# document_builder.py
+# plantilla.py
 #
 # Arma el diccionario de contexto que espera "plantilla_dtss.docx" a partir
 # de dtss_final (lo que ya arma execute_pipeline en bot.py) y lo renderiza
@@ -20,7 +20,7 @@ from docxtpl import DocxTemplate
 
 # Plantilla por defecto cuando no se pasa 'plantilla_path'. La ruta
 # configurable (PLANTILLA_DTSS_PATH) se resuelve en config.py.
-PLANTILLA_PATH = "plantilla_dtss.docx"
+PLANTILLA_PATH = "plantillas/plantilla_dtss.docx"
 
 # Etiquetas legibles para el "badge" de tipo de objeto en la tabla.
 LABELS_TIPO = {
@@ -40,14 +40,8 @@ LABELS_TIPO = {
 }
 
 
-class DocxBuildError(Exception):
-    """Envuelve cualquier falla al armar el .docx con una traza completa:
-    traceback original + resumen del contexto usado + variables que la
-    plantilla espera vs las que realmente se le mandaron. Pensado para
-    volcarse tal cual al log de auditoría, no solo mostrarse como str(e)."""
-    def __init__(self, trace_text: str):
-        self.trace_text = trace_text
-        super().__init__(trace_text)
+# La excepción la define la aplicación (puerto); aquí se lanza y afu.py la reutiliza.
+from sapdoc.application.puertos import DocxBuildError  # noqa: E402,F401
 
 
 def _tipo_label(tipo: str) -> str:

@@ -3,7 +3,7 @@
 # Registro de auditoría permanente, independiente del canal: un evento por
 # línea en JSONL, solo se añade al final y cada línea lleva la huella (SHA-256)
 # de la anterior. Si alguien borra, reordena o modifica una línea, la cadena
-# deja de cuadrar y `python bitacora.py verificar` lo señala.
+# deja de cuadrar y `sapdoc-verificar-auditoria <ruta>` lo señala.
 #
 # Nunca guarda el contenido de los documentos: solo metadatos y huellas, para
 # poder demostrar qué se procesó sin conservar código ni datos del cliente.
@@ -102,12 +102,20 @@ def verificar(ruta: str):
     return n, None
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 3 or sys.argv[1] != "verificar":
-        print("Uso: python bitacora.py verificar <ruta.jsonl>")
-        sys.exit(2)
-    posicion, motivo = verificar(sys.argv[2])
+def main_cli(argv=None):
+    """Comando `sapdoc-verificar-auditoria <ruta.jsonl>`: 0 si la cadena está
+    íntegra, 1 si está alterada, 2 si se usó mal."""
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) != 1:
+        print("Uso: sapdoc-verificar-auditoria <ruta.jsonl>")
+        return 2
+    posicion, motivo = verificar(argv[0])
     if motivo:
         print(f"ALTERADA en la línea {posicion}: {motivo}.")
-        sys.exit(1)
+        return 1
     print(f"Íntegra: {posicion} evento(s) encadenados correctamente.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main_cli())

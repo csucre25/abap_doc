@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sapdoc"
+version = "0.1.0"
+description = "Documentación técnica automática (DTSS) de órdenes de transporte SAP ABAP con IA."
+readme = "README.md"
+requires-python = ">=3.13"
+# Dependencias directas con versión fija. El árbol completo, incluidas las
+# transitivas, está en requirements.lock (ver README: instalación).
+dependencies = [
+    "python-telegram-bot==22.8",
+    "openai==3.3.1",
+    "python-dotenv==1.2.3",
+    "pymupdf==1.28.2",
+    "python-docx==1.2.0",
+    "docxtpl==0.20.2",
+    "pillow==12.3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+
+[project.scripts]
+sapdoc-telegram = "sapdoc.interfaces.telegram.bot:main"
+sapdoc-verificar-auditoria = "sapdoc.infrastructure.bitacora:main_cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

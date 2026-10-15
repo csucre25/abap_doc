@@ -1,4 +1,4 @@
-# sap_technical_tables.py
+# ruido_sap.py
 #
 # Catálogo de tablas técnicas conocidas de SAP que suelen aparecer como
 # TABU (registros de tabla) en una Orden de Transporte SOLO como efecto

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-10-15
+
+### Estructura del proyecto por capas (`src/sapdoc`)
+- El código pasa a un paquete instalable con cuatro capas:
+  - `domain/`: entidades y reglas puras (clasificación de objetos, catálogo de
+    ruido SAP, reparación del JSON de la IA).
+  - `application/`: casos de uso (documentar una OT, Code Review, análisis de
+    calibración y AFU), textos y prompts, y los puertos `ClienteIA` y
+    `GeneradorDocumento`.
+  - `infrastructure/`: configuración, cliente de IA, lectura de PDF/Word y ZIP,
+    generación del Word y registro de auditoría.
+  - `interfaces/telegram/`: el bot.
+- El pipeline ya no importa el generador de Word: lo recibe inyectado
+  (`GeneradorWord`), igual que el cliente de IA. `tests/test_arquitectura.py`
+  falla si una capa importa a otra más externa o si el núcleo usa bibliotecas
+  de E/S.
+- `pyproject.toml` reemplaza a `requirements.txt` y `requirements-dev.txt`;
+  `requirements.lock` se mantiene para reproducir el entorno exacto.
+- Comandos nuevos tras `pip install -e .`: `python -m sapdoc` o
+  `sapdoc-telegram` (arranca el bot) y `sapdoc-verificar-auditoria <ruta>`.
+- La plantilla pasa a `plantillas/plantilla_dtss.docx` y el generador de la
+  plantilla a `scripts/build_template.py`.
+- Sin cambios de comportamiento.
+
 ## 2026-10-14
 
 ### Registro de auditoría permanente

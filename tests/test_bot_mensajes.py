@@ -1,6 +1,6 @@
 """Cómo el canal Telegram presenta el resultado del pipeline."""
-import bot
-from pipeline import ResultadoPipeline
+from sapdoc.domain.entidades import ResultadoPipeline
+from sapdoc.interfaces.telegram import bot
 
 
 def test_sin_avisos_el_mensaje_queda_igual():

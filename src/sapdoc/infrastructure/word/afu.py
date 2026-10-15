@@ -1,4 +1,4 @@
-# document_builder_afu.py
+# afu.py
 #
 # DTSS "completo": usa el AFU (.docx) que el usuario subió al bot como
 # DOCUMENTO BASE y le agrega al final las secciones técnicas.
@@ -35,7 +35,7 @@ from docx.oxml.ns import nsdecls, qn
 from docx.shared import Cm, Pt, RGBColor
 from docx.text.paragraph import Paragraph
 
-from document_builder import (
+from sapdoc.infrastructure.word.plantilla import (
     DocxBuildError,
     _agregar_tabla_generica,
     _construir_tabla_campos_subdoc,

@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
+from sapdoc.domain.entidades import Modelos, Usuario
+
 LLM_BASE_URL_DEFAULT = "https://integrate.api.nvidia.com/v1"
 LLM_MODEL_DEFAULT = "nvidia/nemotron-3-super-120b-a12b"
 
@@ -21,7 +23,7 @@ PROVEEDORES = ("nvidia", "openai_compatible", "azure_openai")
 # Los modelos Nemotron razonan por defecto; para respuestas JSON se apaga, o el
 # "pensar en voz alta" se come el presupuesto de max_tokens.
 EXTRA_BODY_NVIDIA = {"chat_template_kwargs": {"enable_thinking": False}}
-PLANTILLA_DEFAULT = "plantilla_dtss.docx"
+PLANTILLA_DEFAULT = "plantillas/plantilla_dtss.docx"
 USUARIOS_PATH_DEFAULT = "usuarios_permitidos.json"
 AUDITORIA_PATH_DEFAULT = "auditoria/eventos.jsonl"
 ROLES = ("administrador", "usuario")
@@ -36,25 +38,6 @@ class ConfigError(Exception):
     def __init__(self, problemas):
         self.problemas = list(problemas)
         super().__init__("Configuración inválida:\n" + "\n".join(f"- {p}" for p in self.problemas))
-
-
-@dataclass(frozen=True)
-class Modelos:
-    """Modelo de IA a usar en cada fase."""
-    fase0: str
-    fase1: str
-    fase1_5: str
-    fase2: str
-    fase4: str
-
-
-@dataclass(frozen=True)
-class Usuario:
-    """Persona autorizada a usar el bot. Cada canal la identifica con su
-    propio campo (hoy solo Telegram)."""
-    telegram_id: int
-    nombre: str
-    rol: str = "usuario"
 
 
 @dataclass(frozen=True)

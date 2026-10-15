@@ -1,12 +1,13 @@
 """Registro de auditoría encadenado (bitacora.py) y su uso desde el bot."""
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-import bot
-from bitacora import HASH_INICIAL, Bitacora, huella_archivo, sha256_bytes, verificar
-from pipeline import ResultadoPipeline
+from sapdoc.domain.entidades import ResultadoPipeline
+from sapdoc.infrastructure.bitacora import HASH_INICIAL, Bitacora, huella_archivo, sha256_bytes, verificar
+from sapdoc.interfaces.telegram import bot
 
 RAIZ = Path(__file__).resolve().parent.parent
 
@@ -59,8 +60,9 @@ def test_detecta_una_linea_borrada(tmp_path):
 def test_verificacion_desde_la_linea_de_comandos(tmp_path):
     ruta = tmp_path / "eventos.jsonl"
     Bitacora(str(ruta)).registrar("a")
-    proceso = subprocess.run([sys.executable, str(RAIZ / "bitacora.py"), "verificar", str(ruta)],
-                             capture_output=True, text=True, encoding="utf-8")
+    proceso = subprocess.run([sys.executable, "-m", "sapdoc.infrastructure.bitacora", str(ruta)],
+                             capture_output=True, text=True, encoding="utf-8", cwd=RAIZ,
+                             env={**os.environ, "PYTHONPATH": str(RAIZ / "src")})
     assert proceso.returncode == 0 and "Íntegra: 1" in proceso.stdout
 
 

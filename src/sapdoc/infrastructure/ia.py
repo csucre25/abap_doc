@@ -1,23 +1,16 @@
 # ia.py
 #
 # Enchufe del proveedor de IA. El resto de la aplicación solo conoce
-# ClienteIA.completar(); qué servicio hay detrás (NVIDIA, Azure OpenAI u otro
+# ClienteIA.completar() (ver sapdoc.application.puertos); qué servicio hay detrás (NVIDIA, Azure OpenAI u otro
 # compatible con la API de OpenAI) se decide en config.py con LLM_PROVIDER.
-
-from dataclasses import dataclass
 
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
-from config import Config
+from sapdoc.application.puertos import RespuestaIA
+from sapdoc.infrastructure.config import Config
 
 
-@dataclass(frozen=True)
-class RespuestaIA:
-    contenido: str        # nunca None: una respuesta sin texto llega como ""
-    finish_reason: str | None = None
-
-
-class ClienteIA:
+class ClienteOpenAI:
     """Envuelve un cliente tipo OpenAI y le añade los parámetros propios del
     proveedor ('extra_body'), para que el núcleo no dependa de ninguno."""
 
@@ -37,7 +30,7 @@ class ClienteIA:
         return RespuestaIA(contenido=eleccion.message.content or "", finish_reason=eleccion.finish_reason)
 
 
-def crear_cliente_ia(config: Config) -> ClienteIA:
+def crear_cliente_ia(config: Config) -> ClienteOpenAI:
     if config.llm_provider == "azure_openai":
         # En Azure el "modelo" de cada fase es el nombre del despliegue.
         cliente = AsyncAzureOpenAI(
@@ -46,4 +39,4 @@ def crear_cliente_ia(config: Config) -> ClienteIA:
         )
     else:
         cliente = AsyncOpenAI(base_url=config.llm_base_url, api_key=config.llm_api_key)
-    return ClienteIA(cliente, extra_body=config.llm_extra_body)
+    return ClienteOpenAI(cliente, extra_body=config.llm_extra_body)

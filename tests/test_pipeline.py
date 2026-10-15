@@ -10,14 +10,19 @@ from pathlib import Path
 
 import pytest
 
-from ia import RespuestaIA
-from messages import TEXTS
-from pipeline import (
-    EntradaPipeline, Modelos, RegistroAuditoria, ZipSinMetadataError,
-    clasificar_objetos_previos, ejecutar_pipeline, leer_zip_ot, revisar_codigo,
-)
+from sapdoc.application.auditoria_ejecucion import RegistroAuditoria
+from sapdoc.application.documentar_ot import ejecutar_pipeline
+from sapdoc.application.puertos import RespuestaIA
+from sapdoc.application.revision_codigo import revisar_codigo
+from sapdoc.application.textos import TEXTS
+from sapdoc.domain.clasificacion import clasificar_objetos_previos
+from sapdoc.domain.entidades import EntradaPipeline, Modelos
+from sapdoc.infrastructure.word import GeneradorWord
+from sapdoc.infrastructure.zip_ot import ZipSinMetadataError, leer_zip_ot
 
 RAIZ = Path(__file__).resolve().parent.parent
+PLANTILLA = RAIZ / "plantillas" / "plantilla_dtss.docx"
+GENERADOR = GeneradorWord(str(PLANTILLA))
 MODELOS = Modelos(fase0="modelo-f0", fase1="modelo-f1", fase1_5="modelo-cr", fase2="modelo-f2", fase4="modelo-f4")
 
 METADATA = {
@@ -123,7 +128,7 @@ def test_ejecutar_pipeline_genera_documento_sin_canal(zip_ot, tmp_path, monkeypa
     salida.mkdir()
     resultado = asyncio.run(ejecutar_pipeline(
         EntradaPipeline(metadata_json=metadata, abap_dict=abap_dict),
-        cliente, MODELOS, auditoria, progreso=progreso, dir_salida=str(salida),
+        cliente, MODELOS, auditoria, GENERADOR, progreso=progreso, dir_salida=str(salida),
     ))
 
     assert resultado.mensaje_html and "Documento Técnico generado" in resultado.mensaje
@@ -164,12 +169,11 @@ def test_cada_fase_usa_su_modelo_y_la_plantilla_indicada(tmp_path):
     auditoria = RegistroAuditoria()
     resultado = asyncio.run(ejecutar_pipeline(
         EntradaPipeline(metadata_json=METADATA, abap_dict={}, calib_raw_text="estilo", afu_raw_text="requisitos"),
-        cliente, MODELOS, auditoria, dir_salida=str(tmp_path),
-        plantilla_path=str(RAIZ / "plantilla_dtss.docx"),  # ruta absoluta: no depende del directorio actual
+        cliente, MODELOS, auditoria, GENERADOR, dir_salida=str(tmp_path),
     ))
     assert sorted(cliente.llamadas) == ["modelo-f0", "modelo-f1", "modelo-f2", "modelo-f2", "modelo-f4"]
     assert resultado.docx_path and os.path.exists(resultado.docx_path)
-    assert f"plantilla={RAIZ / 'plantilla_dtss.docx'}" in auditoria.texto()
+    assert f"plantilla={PLANTILLA}" in auditoria.texto()
 
 
 def _correr_con_calibracion(tmp_path, calib_raw_text, respuesta_f0='{"tone": "Sobrio"}'):
@@ -177,8 +181,7 @@ def _correr_con_calibracion(tmp_path, calib_raw_text, respuesta_f0='{"tone": "So
     auditoria = RegistroAuditoria()
     resultado = asyncio.run(ejecutar_pipeline(
         EntradaPipeline(metadata_json=METADATA, abap_dict={}, calib_raw_text=calib_raw_text),
-        cliente, MODELOS, auditoria, dir_salida=str(tmp_path),
-        plantilla_path=str(RAIZ / "plantilla_dtss.docx"),
+        cliente, MODELOS, auditoria, GENERADOR, dir_salida=str(tmp_path),
     ))
     assert resultado.docx_path  # el documento se genera en los tres casos
     return resultado, auditoria.texto(), cliente
@@ -223,7 +226,7 @@ def test_ejecutar_pipeline_no_levanta_si_falla_la_ia(tmp_path):
     auditoria = RegistroAuditoria()
     resultado = asyncio.run(ejecutar_pipeline(
         EntradaPipeline(metadata_json=METADATA, abap_dict={}),
-        ClienteRoto(), MODELOS, auditoria, dir_salida=str(tmp_path),
+        ClienteRoto(), MODELOS, auditoria, GENERADOR, dir_salida=str(tmp_path),
     ))
     assert not resultado.mensaje_html
     assert "servicio caído" in resultado.mensaje
@@ -255,8 +258,10 @@ def test_registro_auditoria_vacio():
 
 
 def test_el_nucleo_no_depende_de_telegram():
-    codigo = "import sys, pipeline; sys.exit(1 if any(m.split('.')[0] == 'telegram' for m in sys.modules) else 0)"
-    proceso = subprocess.run([sys.executable, "-c", codigo], cwd=RAIZ, capture_output=True, text=True)
+    codigo = ("import sys, sapdoc.application.documentar_ot; "
+              "sys.exit(1 if any(m.split('.')[0] == 'telegram' for m in sys.modules) else 0)")
+    proceso = subprocess.run([sys.executable, "-c", codigo], cwd=RAIZ, capture_output=True, text=True,
+                             env={**os.environ, "PYTHONPATH": str(RAIZ / "src")})
     assert proceso.returncode == 0, proceso.stderr
 
 

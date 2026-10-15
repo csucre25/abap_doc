@@ -158,5 +158,6 @@ doc.add_heading("6. Órdenes de Transporte", level=1)
 p_tabla = doc.add_paragraph()
 p_tabla.add_run("{{ tabla_ots }}")
 
-doc.save("C:/ABAP VERSION/sapdoc/plantilla_dtss.docx")
+# Ejecutar desde la raíz del proyecto: python scripts/build_template.py
+doc.save("plantillas/plantilla_dtss.docx")
 print("Plantilla creada.")

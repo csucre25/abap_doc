@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from telegram.error import BadRequest, NetworkError, TimedOut
 
-import bot
+from sapdoc.interfaces.telegram import bot
 
 
 def _manejar(error, caplog):

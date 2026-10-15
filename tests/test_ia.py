@@ -5,10 +5,11 @@ from types import SimpleNamespace
 
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
-from config import EXTRA_BODY_NVIDIA, cargar_config
-from ia import ClienteIA, RespuestaIA, crear_cliente_ia
+from sapdoc.application.puertos import RespuestaIA
+from sapdoc.infrastructure.config import EXTRA_BODY_NVIDIA, cargar_config
+from sapdoc.infrastructure.ia import ClienteOpenAI, crear_cliente_ia
 
-PLANTILLA = str(Path(__file__).resolve().parent.parent / "plantilla_dtss.docx")
+PLANTILLA = str(Path(__file__).resolve().parent.parent / "plantillas" / "plantilla_dtss.docx")
 
 
 def config(**extra):
@@ -31,7 +32,7 @@ class SdkFalso:
 
 def test_completar_arma_la_llamada_y_anade_los_parametros_del_proveedor():
     sdk = SdkFalso()
-    cliente = ClienteIA(sdk, extra_body={"x": 1})
+    cliente = ClienteOpenAI(sdk, extra_body={"x": 1})
     respuesta = asyncio.run(cliente.completar("mi-modelo", "sistema", "usuario", temperature=0.2, max_tokens=50))
     assert respuesta == RespuestaIA(contenido="hola", finish_reason="stop")
     assert sdk.recibido == {
@@ -43,13 +44,13 @@ def test_completar_arma_la_llamada_y_anade_los_parametros_del_proveedor():
 
 def test_sin_parametros_extra_no_se_envia_cuerpo_adicional():
     sdk = SdkFalso()
-    asyncio.run(ClienteIA(sdk, extra_body={}).completar("m", "s", "u", temperature=0, max_tokens=1))
+    asyncio.run(ClienteOpenAI(sdk, extra_body={}).completar("m", "s", "u", temperature=0, max_tokens=1))
     assert sdk.recibido["extra_body"] is None
 
 
 def test_respuesta_sin_texto_llega_como_cadena_vacia():
     sdk = SdkFalso(content=None, finish_reason="length")
-    respuesta = asyncio.run(ClienteIA(sdk).completar("m", "s", "u", temperature=0, max_tokens=1))
+    respuesta = asyncio.run(ClienteOpenAI(sdk).completar("m", "s", "u", temperature=0, max_tokens=1))
     assert respuesta == RespuestaIA(contenido="", finish_reason="length")
 
 

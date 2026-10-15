@@ -7,13 +7,13 @@ import pytest
 
 import json
 
-from config import (
+from sapdoc.infrastructure.config import (
     Usuario,
     LLM_BASE_URL_DEFAULT, LLM_MODEL_DEFAULT, ConfigError, cargar_config,
 )
 
 RAIZ = Path(__file__).resolve().parent.parent
-PLANTILLA = str(RAIZ / "plantilla_dtss.docx")
+PLANTILLA = str(RAIZ / "plantillas" / "plantilla_dtss.docx")
 
 
 def env(**extra):
@@ -161,17 +161,19 @@ def test_los_secretos_no_aparecen_al_imprimir_la_config():
 
 
 def test_solo_config_lee_variables_de_entorno():
+    config_py = RAIZ / "src" / "sapdoc" / "infrastructure" / "config.py"
     ofensores = [
-        p.name for p in RAIZ.glob("*.py")
-        if p.name != "config.py" and any(s in p.read_text(encoding="utf-8") for s in ("os.getenv", "os.environ", "load_dotenv"))
+        str(p.relative_to(RAIZ)) for p in (RAIZ / "src").rglob("*.py")
+        if p != config_py and any(s in p.read_text(encoding="utf-8") for s in ("os.getenv", "os.environ", "load_dotenv"))
     ]
     assert ofensores == []
 
 
 def test_el_bot_importa_sin_configuracion():
-    # Importar bot.py no debe exigir credenciales ni crear clientes: eso ocurre en main().
+    # Importar el bot no debe exigir credenciales ni crear clientes: eso ocurre en main().
     proceso = subprocess.run(
-        [sys.executable, "-c", "import bot"], cwd=RAIZ, capture_output=True, text=True,
-        env={"SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""), "PATH": ""},
+        [sys.executable, "-c", "import sapdoc.interfaces.telegram.bot"], cwd=RAIZ, capture_output=True, text=True,
+        env={"SYSTEMROOT": __import__("os").environ.get("SYSTEMROOT", ""), "PATH": "",
+             "PYTHONPATH": str(RAIZ / "src")},
     )
     assert proceso.returncode == 0, proceso.stderr
