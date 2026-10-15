@@ -348,8 +348,8 @@ async def manejar_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Error no controlado en el bot", exc_info=error)
 
 async def control_acceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Primer filtro de cada update: solo chats privados de usuarios en
-    TELEGRAM_USUARIOS_PERMITIDOS. Lo que no pasa se registra y se corta aquí,
+    """Primer filtro de cada update: solo chats privados de usuarios del
+    archivo de usuarios permitidos. Lo que no pasa se registra y se corta aquí,
     antes de que ningún handler descargue archivos o llame a la IA."""
     usuario = update.effective_user
     chat = update.effective_chat
@@ -363,7 +363,7 @@ async def control_acceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.warning(f"No se pudo abandonar el chat {chat.id}: {e}")
         raise ApplicationHandlerStop
 
-    if uid is None or uid not in obtener_config(context).telegram_usuarios_permitidos:
+    if uid is None or obtener_config(context).usuario_telegram(uid) is None:
         nombre = f"@{usuario.username}" if usuario and usuario.username else "sin alias"
         logger.warning(f"Acceso denegado: usuario {uid} ({nombre}).")
         if uid is not None:
@@ -422,12 +422,12 @@ def main():
         return
 
     app = construir_app(config)
-    if config.telegram_usuarios_permitidos:
-        logger.info(f"Usuarios autorizados: {len(config.telegram_usuarios_permitidos)}.")
+    if config.usuarios:
+        logger.info(f"Usuarios autorizados ({config.usuarios_path}): {len(config.usuarios)}.")
     else:
         logger.warning(
-            "TELEGRAM_USUARIOS_PERMITIDOS está vacía: nadie puede usar el bot. Escríbele desde Telegram "
-            "para ver tu ID y agrégalo en el .env."
+            f"No hay usuarios autorizados en {config.usuarios_path}: nadie puede usar el bot. Escríbele "
+            "desde Telegram para ver tu ID y agrégalo al archivo (ver usuarios_permitidos.example.json)."
         )
     logger.info(TEXTS[LANG]["log_bot_listening"])
     app.run_polling()

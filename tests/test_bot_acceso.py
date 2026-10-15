@@ -1,5 +1,7 @@
 """Control de acceso del canal Telegram: lista blanca y solo chats privados."""
 import asyncio
+import json
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,10 +17,12 @@ PLANTILLA = str(Path(__file__).resolve().parent.parent / "plantilla_dtss.docx")
 AUTORIZADO, EXTRANO = 111, 999
 
 
-def config(permitidos=str(AUTORIZADO)):
+def config(permitidos=(AUTORIZADO,)):
+    ruta = Path(tempfile.mkdtemp()) / "usuarios.json"
+    ruta.write_text(json.dumps([{"telegram_id": i, "nombre": f"Persona {i}"} for i in permitidos]), encoding="utf-8")
     return cargar_config({
         "TELEGRAM_BOT_TOKEN": "123:abc", "LLM_API_KEY": "k", "PLANTILLA_DTSS_PATH": PLANTILLA,
-        "TELEGRAM_USUARIOS_PERMITIDOS": permitidos,
+        "USUARIOS_PERMITIDOS_PATH": str(ruta),
     })
 
 
@@ -49,7 +53,7 @@ def update_falso(uid, tipo_chat=ChatType.PRIVATE, boton=False, registro=None):
     ), r
 
 
-def correr(update, permitidos=str(AUTORIZADO)):
+def correr(update, permitidos=(AUTORIZADO,)):
     contexto = SimpleNamespace(bot_data={"config": config(permitidos)})
     return asyncio.run(bot.control_acceso(update, contexto))
 
@@ -85,7 +89,7 @@ def test_en_grupos_y_canales_el_bot_sale_aunque_el_usuario_este_autorizado(tipo)
 def test_lista_vacia_no_autoriza_a_nadie():
     update, _ = update_falso(AUTORIZADO)
     with pytest.raises(ApplicationHandlerStop):
-        correr(update, permitidos="")
+        correr(update, permitidos=())
 
 
 def test_update_sin_usuario_se_corta_sin_responder():

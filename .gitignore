@@ -2,6 +2,8 @@ venv/
 .env
 .env.*
 ajustes_tecnicos.json
+# Datos personales de los usuarios autorizados (el ejemplo sí se versiona).
+usuarios_permitidos.json
 __pycache__/
 *.pyc
 .pytest_cache/

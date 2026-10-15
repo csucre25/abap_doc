@@ -22,6 +22,8 @@ PROVEEDORES = ("nvidia", "openai_compatible", "azure_openai")
 # "pensar en voz alta" se come el presupuesto de max_tokens.
 EXTRA_BODY_NVIDIA = {"chat_template_kwargs": {"enable_thinking": False}}
 PLANTILLA_DEFAULT = "plantilla_dtss.docx"
+USUARIOS_PATH_DEFAULT = "usuarios_permitidos.json"
+ROLES = ("administrador", "usuario")
 
 _HOSTS_LOCALES = {"localhost", "127.0.0.1", "::1"}
 
@@ -46,11 +48,21 @@ class Modelos:
 
 
 @dataclass(frozen=True)
+class Usuario:
+    """Persona autorizada a usar el bot. Cada canal la identifica con su
+    propio campo (hoy solo Telegram)."""
+    telegram_id: int
+    nombre: str
+    rol: str = "usuario"
+
+
+@dataclass(frozen=True)
 class Config:
     # repr=False: los secretos no deben aparecer si el objeto termina en un log.
     telegram_token: str = field(repr=False)
-    # IDs numéricos de Telegram autorizados. Vacío = nadie puede usar el bot.
-    telegram_usuarios_permitidos: frozenset
+    # Usuarios autorizados (archivo JSON aparte). Vacío = nadie puede usar el bot.
+    usuarios_path: str
+    usuarios: tuple = field(repr=False)
     llm_api_key: str = field(repr=False)
     llm_provider: str
     llm_base_url: str
@@ -59,11 +71,53 @@ class Config:
     modelos: Modelos
     plantilla_path: str
 
+    def usuario_telegram(self, telegram_id) -> Usuario | None:
+        return next((u for u in self.usuarios if u.telegram_id == telegram_id), None)
+
 
 def _valor(env, clave, default=None):
     """Una variable vacía o solo con espacios cuenta como no definida."""
     valor = (env.get(clave) or "").strip()
     return valor or default
+
+
+def _cargar_usuarios(ruta, problemas) -> tuple:
+    """Lee el array de usuarios. Si el archivo no existe devuelve () sin error:
+    el bot arranca sin autorizar a nadie (falla cerrado) y avisa al arrancar."""
+    if not os.path.isfile(ruta):
+        return ()
+    try:
+        # utf-8-sig: el Bloc de notas de Windows puede guardar con BOM.
+        with open(ruta, encoding="utf-8-sig") as f:
+            datos = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        problemas.append(f"{ruta} no es un JSON válido: {e}.")
+        return ()
+    if not isinstance(datos, list):
+        problemas.append(f"{ruta} debe contener un array de usuarios: [ {{...}}, {{...}} ].")
+        return ()
+
+    usuarios, vistos = [], set()
+    for posicion, dato in enumerate(datos, start=1):
+        prefijo = f"{ruta}, usuario {posicion}"
+        if not isinstance(dato, dict):
+            problemas.append(f"{prefijo}: debe ser un objeto {{\"telegram_id\": ..., \"nombre\": ...}}.")
+            continue
+        telegram_id, nombre, rol = dato.get("telegram_id"), dato.get("nombre"), dato.get("rol", "usuario")
+        errores_previos = len(problemas)
+        # type() y no isinstance(): True/False son int en Python y no son IDs válidos.
+        if type(telegram_id) is not int:
+            problemas.append(f"{prefijo}: 'telegram_id' debe ser un número sin comillas.")
+        elif telegram_id in vistos:
+            problemas.append(f"{prefijo}: el telegram_id {telegram_id} está repetido.")
+        if not isinstance(nombre, str) or not nombre.strip():
+            problemas.append(f"{prefijo}: falta 'nombre'.")
+        if rol not in ROLES:
+            problemas.append(f"{prefijo}: 'rol' debe ser uno de {', '.join(ROLES)} (es {rol!r}).")
+        if len(problemas) == errores_previos:
+            vistos.add(telegram_id)
+            usuarios.append(Usuario(telegram_id=telegram_id, nombre=nombre.strip(), rol=rol))
+    return tuple(usuarios)
 
 
 def cargar_config(env=None) -> Config:
@@ -79,19 +133,16 @@ def cargar_config(env=None) -> Config:
     if not telegram_token:
         problemas.append("Falta TELEGRAM_BOT_TOKEN.")
 
-    # Se admite vacío a propósito: el bot arranca sin autorizar a nadie y le
-    # dice a quien escriba su ID, que es como se obtiene para agregarlo aquí.
-    telegram_usuarios_permitidos = set()
-    for item in (_valor(env, "TELEGRAM_USUARIOS_PERMITIDOS") or "").split(","):
-        item = item.strip()
-        if not item:
-            continue
-        if item.lstrip("-").isdigit():
-            telegram_usuarios_permitidos.add(int(item))
-        else:
-            problemas.append(
-                f"TELEGRAM_USUARIOS_PERMITIDOS solo admite IDs numéricos separados por comas ({item!r} no lo es)."
-            )
+    # Sin archivo o con el array vacío el bot arranca sin autorizar a nadie y le
+    # dice a quien escriba su ID, que es como se obtiene para agregarlo.
+    usuarios_path = _valor(env, "USUARIOS_PERMITIDOS_PATH", USUARIOS_PATH_DEFAULT)
+    usuarios = _cargar_usuarios(usuarios_path, problemas)
+    if _valor(env, "TELEGRAM_USUARIOS_PERMITIDOS"):
+        # Formato anterior: si se ignorara en silencio, todos quedarían fuera sin saber por qué.
+        problemas.append(
+            f"TELEGRAM_USUARIOS_PERMITIDOS ya no se usa: pasa los usuarios a {usuarios_path} "
+            "(ver usuarios_permitidos.example.json) y borra esa línea del .env."
+        )
 
     # NVIDIA_API_KEY es el nombre histórico; LLM_API_KEY tiene prioridad.
     llm_api_key = _valor(env, "LLM_API_KEY") or _valor(env, "NVIDIA_API_KEY")
@@ -153,7 +204,8 @@ def cargar_config(env=None) -> Config:
 
     return Config(
         telegram_token=telegram_token,
-        telegram_usuarios_permitidos=frozenset(telegram_usuarios_permitidos),
+        usuarios_path=usuarios_path,
+        usuarios=usuarios,
         llm_api_key=llm_api_key,
         llm_provider=llm_provider,
         llm_base_url=llm_base_url,

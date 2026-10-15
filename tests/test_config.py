@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
+import json
+
 from config import (
+    Usuario,
     LLM_BASE_URL_DEFAULT, LLM_MODEL_DEFAULT, ConfigError, cargar_config,
 )
 
@@ -14,7 +17,8 @@ PLANTILLA = str(RAIZ / "plantilla_dtss.docx")
 
 
 def env(**extra):
-    base = {"TELEGRAM_BOT_TOKEN": "token-tg", "NVIDIA_API_KEY": "clave-nvidia", "PLANTILLA_DTSS_PATH": PLANTILLA}
+    base = {"TELEGRAM_BOT_TOKEN": "token-tg", "NVIDIA_API_KEY": "clave-nvidia", "PLANTILLA_DTSS_PATH": PLANTILLA,
+            "USUARIOS_PERMITIDOS_PATH": str(RAIZ / "tests" / "no_existe_usuarios.json")}
     base.update(extra)
     return base
 
@@ -93,12 +97,54 @@ def test_azure_exige_version_de_api():
     assert cargar_config(env(**base, LLM_API_VERSION="2024-10-21")).llm_api_version == "2024-10-21"
 
 
-def test_usuarios_permitidos():
-    assert cargar_config(env()).telegram_usuarios_permitidos == frozenset()
-    assert cargar_config(env(TELEGRAM_USUARIOS_PERMITIDOS=" 123, 456 ,,")).telegram_usuarios_permitidos == {123, 456}
+def _usuarios(tmp_path, contenido, bom=False):
+    ruta = tmp_path / "usuarios.json"
+    ruta.write_text(contenido if isinstance(contenido, str) else json.dumps(contenido),
+                    encoding="utf-8-sig" if bom else "utf-8")
+    return env(USUARIOS_PERMITIDOS_PATH=str(ruta))
+
+
+def test_sin_archivo_de_usuarios_no_hay_nadie_autorizado():
+    config = cargar_config(env())
+    assert config.usuarios == () and config.usuario_telegram(123) is None
+
+
+def test_usuarios_desde_json(tmp_path):
+    config = cargar_config(_usuarios(tmp_path, [
+        {"telegram_id": 123, "nombre": " Ana ", "rol": "administrador"},
+        {"telegram_id": 456, "nombre": "Luis"},
+    ], bom=True))
+    assert config.usuarios == (Usuario(123, "Ana", "administrador"), Usuario(456, "Luis", "usuario"))
+    assert config.usuario_telegram(456).nombre == "Luis"
+    assert config.usuario_telegram(789) is None
+    assert "Ana" not in repr(config)  # datos personales fuera de los logs
+
+
+@pytest.mark.parametrize("contenido, esperado", [
+    ("{no es json", "no es un JSON válido"),
+    ({"telegram_id": 1, "nombre": "x"}, "array"),
+    (["123"], "debe ser un objeto"),
+    ([{"telegram_id": "123", "nombre": "Ana"}], "número sin comillas"),
+    ([{"telegram_id": True, "nombre": "Ana"}], "número sin comillas"),
+    ([{"telegram_id": 1, "nombre": "Ana"}, {"telegram_id": 1, "nombre": "Luis"}], "repetido"),
+    ([{"telegram_id": 1, "nombre": "  "}], "falta 'nombre'"),
+    ([{"telegram_id": 1, "nombre": "Ana", "rol": "jefe"}], "'rol'"),
+])
+def test_archivo_de_usuarios_invalido(tmp_path, contenido, esperado):
     with pytest.raises(ConfigError) as error:
-        cargar_config(env(TELEGRAM_USUARIOS_PERMITIDOS="123, @alguien"))
-    assert "@alguien" in str(error.value)
+        cargar_config(_usuarios(tmp_path, contenido))
+    assert esperado in str(error.value)
+
+
+def test_formato_anterior_de_lista_blanca_se_rechaza_con_instrucciones():
+    with pytest.raises(ConfigError) as error:
+        cargar_config(env(TELEGRAM_USUARIOS_PERMITIDOS="123"))
+    assert "usuarios_permitidos.example.json" in str(error.value)
+
+
+def test_el_ejemplo_versionado_es_valido():
+    config = cargar_config(env(USUARIOS_PERMITIDOS_PATH=str(RAIZ / "usuarios_permitidos.example.json")))
+    assert len(config.usuarios) == 2
 
 
 def test_reporta_todos_los_problemas_juntos():

@@ -12,7 +12,8 @@ PLANTILLA = str(Path(__file__).resolve().parent.parent / "plantilla_dtss.docx")
 
 
 def config(**extra):
-    env = {"TELEGRAM_BOT_TOKEN": "t", "LLM_API_KEY": "k", "PLANTILLA_DTSS_PATH": PLANTILLA}
+    env = {"TELEGRAM_BOT_TOKEN": "t", "LLM_API_KEY": "k", "PLANTILLA_DTSS_PATH": PLANTILLA,
+           "USUARIOS_PERMITIDOS_PATH": str(Path(__file__).resolve().parent / "no_existe_usuarios.json")}
     env.update(extra)
     return cargar_config(env)
 

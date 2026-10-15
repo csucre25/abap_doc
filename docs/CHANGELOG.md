@@ -2,6 +2,20 @@
 
 ## 2026-10-14
 
+### Usuarios autorizados en un archivo JSON con nombre y rol
+- La lista blanca pasa de `TELEGRAM_USUARIOS_PERMITIDOS` (IDs en el `.env`) a
+  un archivo JSON con un objeto por persona: `telegram_id`, `nombre` y `rol`
+  (`administrador` o `usuario`). Ruta configurable con
+  `USUARIOS_PERMITIDOS_PATH` (por defecto `usuarios_permitidos.json`).
+- El archivo real queda fuera de git por contener datos personales; se
+  versiona `usuarios_permitidos.example.json` como plantilla.
+- Sin archivo o con el array vacío nadie puede usar el bot. Un archivo mal
+  formado (JSON inválido, ID entre comillas o repetido, rol desconocido)
+  impide arrancar y dice qué falla. Si el `.env` aún trae
+  `TELEGRAM_USUARIOS_PERMITIDOS`, también impide arrancar e indica cómo migrar.
+- Los roles se guardan pero todavía no restringen nada.
+- Tests en `tests/test_config.py` y `tests/test_bot_acceso.py`.
+
 ### Lista blanca de usuarios y solo chats privados
 - Nueva variable `TELEGRAM_USUARIOS_PERMITIDOS` (IDs numéricos separados por
   comas). Un control previo a todos los handlers corta cualquier mensaje o
