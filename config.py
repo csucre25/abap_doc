@@ -23,6 +23,7 @@ PROVEEDORES = ("nvidia", "openai_compatible", "azure_openai")
 EXTRA_BODY_NVIDIA = {"chat_template_kwargs": {"enable_thinking": False}}
 PLANTILLA_DEFAULT = "plantilla_dtss.docx"
 USUARIOS_PATH_DEFAULT = "usuarios_permitidos.json"
+AUDITORIA_PATH_DEFAULT = "auditoria/eventos.jsonl"
 ROLES = ("administrador", "usuario")
 
 _HOSTS_LOCALES = {"localhost", "127.0.0.1", "::1"}
@@ -70,6 +71,7 @@ class Config:
     llm_extra_body: dict
     modelos: Modelos
     plantilla_path: str
+    auditoria_path: str = AUDITORIA_PATH_DEFAULT
 
     def usuario_telegram(self, telegram_id) -> Usuario | None:
         return next((u for u in self.usuarios if u.telegram_id == telegram_id), None)
@@ -199,6 +201,8 @@ def cargar_config(env=None) -> Config:
     if not os.path.isfile(plantilla_path):
         problemas.append(f"PLANTILLA_DTSS_PATH no apunta a un archivo existente: {plantilla_path!r}.")
 
+    auditoria_path = _valor(env, "AUDITORIA_PATH", AUDITORIA_PATH_DEFAULT)
+
     if problemas:
         raise ConfigError(problemas)
 
@@ -213,4 +217,5 @@ def cargar_config(env=None) -> Config:
         llm_extra_body=llm_extra_body,
         modelos=modelos,
         plantilla_path=plantilla_path,
+        auditoria_path=auditoria_path,
     )

@@ -11,6 +11,7 @@ from telegram.constants import ChatType
 from telegram.ext import ApplicationHandlerStop, TypeHandler
 
 import bot
+from bitacora import Bitacora
 from config import cargar_config
 
 PLANTILLA = str(Path(__file__).resolve().parent.parent / "plantilla_dtss.docx")
@@ -53,15 +54,34 @@ def update_falso(uid, tipo_chat=ChatType.PRIVATE, boton=False, registro=None):
     ), r
 
 
-def correr(update, permitidos=(AUTORIZADO,)):
-    contexto = SimpleNamespace(bot_data={"config": config(permitidos)})
+def correr(update, permitidos=(AUTORIZADO,), bitacora=None):
+    bitacora = bitacora or Bitacora(str(Path(tempfile.mkdtemp()) / "eventos.jsonl"))
+    contexto = SimpleNamespace(bot_data={"config": config(permitidos), "bitacora": bitacora})
     return asyncio.run(bot.control_acceso(update, contexto))
+
+
+def eventos(bitacora):
+    ruta = Path(bitacora.ruta)
+    return [json.loads(l) for l in ruta.read_text(encoding="utf-8").splitlines()] if ruta.exists() else []
 
 
 def test_usuario_autorizado_en_chat_privado_pasa():
     update, r = update_falso(AUTORIZADO)
-    assert correr(update) is None
+    b = Bitacora(str(Path(tempfile.mkdtemp()) / "eventos.jsonl"))
+    assert correr(update, bitacora=b) is None
     assert (r.respuestas, r.alertas, r.abandonos) == ([], [], [])
+    assert eventos(b) == []
+
+
+def test_los_accesos_denegados_quedan_en_la_bitacora():
+    b = Bitacora(str(Path(tempfile.mkdtemp()) / "eventos.jsonl"))
+    for update in (update_falso(EXTRANO)[0], update_falso(AUTORIZADO, tipo_chat=ChatType.GROUP)[0]):
+        with pytest.raises(ApplicationHandlerStop):
+            correr(update, bitacora=b)
+    no_autorizado, grupo = eventos(b)
+    assert (no_autorizado["evento"], no_autorizado["motivo"], no_autorizado["telegram_id"]) == (
+        "acceso_denegado", "usuario_no_autorizado", EXTRANO)
+    assert (grupo["motivo"], grupo["telegram_id"]) == ("chat_no_privado", AUTORIZADO)
 
 
 def test_usuario_no_autorizado_se_corta_y_recibe_su_id():

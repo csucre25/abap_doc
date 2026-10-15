@@ -247,7 +247,7 @@ def test_revisar_codigo_con_respuesta_ilegible_no_reporta_violaciones():
     # Comportamiento vigente (falla en abierto); se endurecerá por configuración.
     review = asyncio.run(revisar_codigo(
         ClienteIAFalso("no pude analizarlo"), MODELOS.fase1_5, "{}", "", RegistroAuditoria()))
-    assert review == {"has_violations": False}
+    assert review == {"has_violations": False, "ilegible": True}
 
 
 def test_registro_auditoria_vacio():

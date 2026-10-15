@@ -295,7 +295,8 @@ async def revisar_codigo(cliente_ia, modelo, metadata_str, abap_code_str, audito
         return json.loads(review_txt.strip())
     except json.JSONDecodeError:
         logger.warning("Fallo al parsear JSON del Code Review. Ignorando validaciones.")
-        return {"has_violations": False}
+        # "ilegible" no cambia el flujo (sigue sin bloquear), pero deja constancia en la bitácora.
+        return {"has_violations": False, "ilegible": True}
 
 
 # ==========================================

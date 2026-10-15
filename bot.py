@@ -5,6 +5,9 @@ import tempfile
 import html
 import asyncio
 import random
+import time
+import uuid
+from dataclasses import asdict
 from contextlib import asynccontextmanager
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatType
@@ -13,6 +16,7 @@ from telegram.ext import (
     Application, ApplicationHandlerStop, CommandHandler, MessageHandler, CallbackQueryHandler,
     TypeHandler, filters, ContextTypes, ConversationHandler
 )
+from bitacora import Bitacora, huella_archivo, sha256_archivo, sha256_bytes
 from config import Config, ConfigError, cargar_config
 from ia import ClienteIA, crear_cliente_ia
 from document_parser import extract_text_from_file
@@ -54,6 +58,26 @@ def obtener_config(context: ContextTypes.DEFAULT_TYPE) -> Config:
 
 def obtener_cliente_ia(context: ContextTypes.DEFAULT_TYPE) -> ClienteIA:
     return context.bot_data['cliente_ia']
+
+def obtener_bitacora(context: ContextTypes.DEFAULT_TYPE) -> Bitacora:
+    return context.bot_data['bitacora']
+
+def quien(context: ContextTypes.DEFAULT_TYPE, usuario_tg) -> dict:
+    """Identificación del usuario para la bitácora."""
+    uid = usuario_tg.id if usuario_tg else None
+    usuario = obtener_config(context).usuario_telegram(uid) if uid is not None else None
+    return {
+        "canal": "telegram", "telegram_id": uid,
+        "nombre": usuario.nombre if usuario else None, "rol": usuario.rol if usuario else None,
+    }
+
+def datos_ot(context: ContextTypes.DEFAULT_TYPE) -> dict:
+    tr = (context.user_data.get('metadata_json') or {}).get('transport_request', {}) or {}
+    return {"orden": tr.get('id'), "descripcion": tr.get('description')}
+
+def guardar_huella_entrada(context: ContextTypes.DEFAULT_TYPE, clave: str, nombre: str, ruta: str):
+    with open(ruta, 'rb') as f:
+        context.user_data.setdefault('entradas', {})[clave] = huella_archivo(nombre, f.read())
 
 async def loading_animation(status_msg, base_text, phase_key="loading_phrases_tech"):
     phrases = TEXTS[LANG].get(phase_key, TEXTS[LANG]["loading_phrases_tech"]).copy()
@@ -98,6 +122,7 @@ async def skip_calibration(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     context.user_data['calib_raw_text'] = None
+    context.user_data.setdefault('entradas', {}).pop('calibracion', None)
     await query.edit_message_text(TEXTS[LANG]["msg_calib_skipped"], parse_mode='HTML')
     return WAITING_AFU
 
@@ -113,6 +138,7 @@ async def handle_calibration(update: Update, context: ContextTypes.DEFAULT_TYPE)
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = os.path.join(temp_dir, document.file_name)
             await file.download_to_drive(file_path)
+            guardar_huella_entrada(context, 'calibracion', document.file_name, file_path)
             context.user_data['calib_raw_text'] = extract_text_from_file(file_path)
 
         await status_msg.edit_text(TEXTS[LANG]["msg_calib_success"], parse_mode='HTML')
@@ -133,6 +159,7 @@ async def handle_afu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = os.path.join(temp_dir, document.file_name)
             await file.download_to_drive(file_path)
+            guardar_huella_entrada(context, 'afu', document.file_name, file_path)
             context.user_data['afu_raw_text'] = extract_text_from_file(file_path)
             # Para "técnica + requisitos funcionales" el AFU es el documento base,
             # así que se conserva el archivo original (solo .docx; un PDF no se puede extender).
@@ -159,6 +186,7 @@ async def handle_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = os.path.join(temp_dir, document.file_name)
             await file.download_to_drive(zip_path)
+            guardar_huella_entrada(context, 'zip_ot', document.file_name, zip_path)
 
             try:
                 metadata_content, abap_files_dict = leer_zip_ot(zip_path)
@@ -203,6 +231,7 @@ async def handle_cr_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['incluir_funcional'] = (query.data == 'skip_cr_full')
 
     if query.data in ('skip_cr', 'skip_cr_full'):
+        context.user_data['code_review'] = {"estado": "omitido"}
         await query.edit_message_text(TEXTS[LANG]["msg_cr_skipped"])
         await execute_pipeline(update, context)
         return ConversationHandler.END
@@ -214,6 +243,14 @@ async def handle_cr_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['metadata_str'], context.user_data['abap_code_str'],
             obtener_auditoria(context),
         )
+
+    hallazgos = len(code_review.get("findings", []) or [])
+    if code_review.get("ilegible"):
+        context.user_data['code_review'] = {"estado": "ilegible"}
+    elif code_review.get("has_violations", False):
+        context.user_data['code_review'] = {"estado": "con_hallazgos", "hallazgos": hallazgos}
+    else:
+        context.user_data['code_review'] = {"estado": "sin_hallazgos"}
 
     if code_review.get("has_violations", False):
         findings_list = "\n".join([f"• {html.escape(f.get('description', ''))}" for f in code_review.get("findings", [])])
@@ -236,10 +273,15 @@ async def handle_cr_decision(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     if query.data == 'ignore_cr':
+        context.user_data['code_review']["estado"] = "hallazgos_ignorados"
         await query.edit_message_text(TEXTS[LANG]["msg_cr_skipped"])
         await execute_pipeline(update, context)
         return ConversationHandler.END
     else:
+        obtener_bitacora(context).registrar(
+            "code_review_cancelado", usuario=quien(context, update.effective_user), ot=datos_ot(context),
+            code_review=context.user_data.get('code_review'),
+        )
         await query.edit_message_text(TEXTS[LANG]["msg_process_cancelled"])
         return WAITING_ZIP
 
@@ -250,6 +292,17 @@ async def execute_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_msg = context.user_data['internal_status_msg']
     auditoria = obtener_auditoria(context)
     resultado = None
+    bitacora = obtener_bitacora(context)
+    config = obtener_config(context)
+    id_ejecucion = uuid.uuid4().hex
+    inicio = time.monotonic()
+    bitacora.registrar(
+        "ejecucion_iniciada", id_ejecucion=id_ejecucion, usuario=quien(context, update.effective_user),
+        ot=datos_ot(context), entradas=context.user_data.get('entradas', {}),
+        modo="tecnica_y_funcional" if context.user_data.get('incluir_funcional') else "tecnica",
+        code_review=context.user_data.get('code_review'),
+        ia={"proveedor": config.llm_provider, "modelos": asdict(config.modelos)},
+    )
 
     try:
         entrada = EntradaPipeline(
@@ -260,7 +313,6 @@ async def execute_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
             afu_docx_bytes=context.user_data.get('afu_docx_bytes'),
             incluir_funcional=context.user_data.get('incluir_funcional', False),
         )
-        config = obtener_config(context)
         resultado = await ejecutar_pipeline(
             entrada, obtener_cliente_ia(context), config.modelos, auditoria,
             progreso=progreso_en(status_msg), plantilla_path=config.plantilla_path,
@@ -274,6 +326,7 @@ async def execute_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(TEXTS[LANG].get("zip_error", "Error interno") + f"\nDetalle: {e}")
 
     finally:
+        registrar_fin_ejecucion(bitacora, id_ejecucion, resultado, time.monotonic() - inicio)
         try:
             file_ts = get_file_timestamp()
 
@@ -323,6 +376,32 @@ async def execute_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         except Exception as log_e:
             logger.error(TEXTS[LANG]["msg_critical_error"].format(log_e=log_e))
+            bitacora.registrar("envio_fallido", id_ejecucion=id_ejecucion, error=f"{type(log_e).__name__}: {log_e}")
+
+def registrar_fin_ejecucion(bitacora: Bitacora, id_ejecucion: str, resultado, duracion_s: float):
+    """Huellas de lo generado, antes de enviarlo y borrarlo del disco."""
+    salidas = {}
+    if resultado and resultado.docx_path and os.path.exists(resultado.docx_path):
+        salidas["docx_sha256"] = sha256_archivo(resultado.docx_path)
+    if resultado and resultado.borrador_json:
+        salidas["json_sha256"] = sha256_bytes(resultado.borrador_json.encode("utf-8"))
+    csvs = [r for r in (resultado.csvs_configuracion if resultado else []) if os.path.exists(r)]
+    if csvs:
+        salidas["csv_sha256"] = {os.path.basename(r): sha256_archivo(r) for r in csvs}
+    if resultado is None:
+        estado = "error"
+    elif "docx_sha256" in salidas:
+        estado = "documento_generado"
+    elif resultado.borrador_json:
+        estado = "solo_json"  # el Word falló pero el contenido se generó
+    else:
+        estado = "error"
+    bitacora.registrar(
+        "ejecucion_finalizada", id_ejecucion=id_ejecucion, estado=estado, salidas=salidas,
+        avisos=list(resultado.avisos) if resultado else [],
+        error=None if (resultado is None or estado != "error") else resultado.mensaje,
+        duracion_s=round(duracion_s, 1),
+    )
 
 # ==========================================
 # GESTIÓN GLOBAL Y ARRANQUE
@@ -357,6 +436,10 @@ async def control_acceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if chat is not None and chat.type != ChatType.PRIVATE:
         logger.warning(f"Acceso denegado: chat {chat.type} {chat.id} (usuario {uid}). El bot abandona el chat.")
+        obtener_bitacora(context).registrar(
+            "acceso_denegado", motivo="chat_no_privado", canal="telegram", telegram_id=uid,
+            chat={"tipo": str(chat.type), "id": chat.id},
+        )
         try:
             await chat.leave()
         except Exception as e:
@@ -366,6 +449,10 @@ async def control_acceso(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if uid is None or obtener_config(context).usuario_telegram(uid) is None:
         nombre = f"@{usuario.username}" if usuario and usuario.username else "sin alias"
         logger.warning(f"Acceso denegado: usuario {uid} ({nombre}).")
+        obtener_bitacora(context).registrar(
+            "acceso_denegado", motivo="usuario_no_autorizado", canal="telegram", telegram_id=uid,
+            alias=usuario.username if usuario else None,
+        )
         if uid is not None:
             mensaje = TEXTS[LANG]["msg_no_autorizado"].format(user_id=uid)
             if update.callback_query:
@@ -385,6 +472,7 @@ def construir_app(config: Config) -> Application:
 
     app.bot_data['config'] = config
     app.bot_data['cliente_ia'] = crear_cliente_ia(config)
+    app.bot_data['bitacora'] = Bitacora(config.auditoria_path)
 
     # Grupo -1: corre antes que cualquier otro handler y puede cortar el update.
     app.add_handler(TypeHandler(Update, control_acceso), group=-1)
@@ -429,6 +517,7 @@ def main():
             f"No hay usuarios autorizados en {config.usuarios_path}: nadie puede usar el bot. Escríbele "
             "desde Telegram para ver tu ID y agrégalo al archivo (ver usuarios_permitidos.example.json)."
         )
+    logger.info(f"Registro de auditoría: {config.auditoria_path}")
     logger.info(TEXTS[LANG]["log_bot_listening"])
     app.run_polling()
 

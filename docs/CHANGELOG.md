@@ -2,6 +2,27 @@
 
 ## 2026-10-14
 
+### Registro de auditoría permanente
+- Nuevo `bitacora.py`: registro de eventos en JSONL (por defecto
+  `auditoria/eventos.jsonl`, configurable con `AUDITORIA_PATH`, fuera de git).
+  Solo se añade al final y cada línea lleva el SHA-256 de la anterior;
+  `python bitacora.py verificar <ruta>` detecta líneas modificadas, borradas
+  o reordenadas.
+- Eventos: `acceso_denegado` (usuario no autorizado o chat no privado),
+  `ejecucion_iniciada` (usuario con nombre y rol, OT, nombre/tamaño/SHA-256 de
+  calibración, AFU y ZIP, modo, estado del Code Review, proveedor y modelos de
+  IA), `ejecucion_finalizada` (estado, SHA-256 del Word, JSON y CSV, avisos,
+  error, duración), `code_review_cancelado` y `envio_fallido`.
+- El Code Review queda registrado como `omitido`, `sin_hallazgos`,
+  `con_hallazgos`, `hallazgos_ignorados` o `ilegible`. Para eso
+  `revisar_codigo` marca ahora con `"ilegible": true` la respuesta que no pudo
+  leer (el flujo no cambia: sigue sin bloquear).
+- No se guarda contenido de documentos, solo metadatos y huellas.
+- Limitación: la cadena detecta alteraciones, pero quien pueda escribir el
+  archivo podría regenerarla entera; para evitarlo hace falta enviar los
+  eventos a un almacenamiento externo de solo-añadir.
+- Tests `tests/test_bitacora.py` y nuevos casos en `tests/test_bot_acceso.py`.
+
 ### Usuarios autorizados en un archivo JSON con nombre y rol
 - La lista blanca pasa de `TELEGRAM_USUARIOS_PERMITIDOS` (IDs en el `.env`) a
   un archivo JSON con un objeto por persona: `telegram_id`, `nombre` y `rol`

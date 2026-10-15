@@ -4,6 +4,8 @@ venv/
 ajustes_tecnicos.json
 # Datos personales de los usuarios autorizados (el ejemplo sí se versiona).
 usuarios_permitidos.json
+# Registro de auditoría: contiene nombres e IDs de usuarios.
+auditoria/
 __pycache__/
 *.pyc
 .pytest_cache/
