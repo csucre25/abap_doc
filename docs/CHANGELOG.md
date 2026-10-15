@@ -2,6 +2,11 @@
 
 ## 2026-10-15
 
+### CLAUDE.md actualizado
+- Refleja el proyecto actual (python-telegram-bot, capas en `src/sapdoc`,
+  proveedores de IA) en lugar de aiogram y el panel web, y recoge comandos,
+  reglas de cambio, convenciones de tests, datos sensibles y pendientes.
+
 ### Documentación del código y del flujo de ejecución
 - Todas las funciones y clases tienen docstring que explica qué hacen y en
   qué punto del flujo intervienen; los módulos `bot.py` y `textos.py` tienen
